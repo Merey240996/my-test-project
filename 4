@@ -1,0 +1,696 @@
+<?php
+declare(strict_types=1);
+namespace App\Api;
+
+use IO\Constants as EIO;
+use IO\Api\CoreApi;
+use IO\Api\ApiResult;
+
+/**
+ * Список инвойсов — без своей таблицы в БД, все данные тянутся из сервиса
+ * trade (bmc.trade2.model.invoices2.*), как это раньше делал только фронт
+ * напрямую (см. legacy шаблон invoices.html: pageInvoicesReady() ->
+ * invoicesSearch() -> ioCallEntity('app.model.invoices2.getDataMore', ...)
+ * и loadStatMP() -> ioCallEntity('bmc.trade2.model.invoices2.getStat', ...)).
+ *
+ * По той же причине, что EnumApi — это CoreApi, а не CrudApi: тут нет
+ * SqlClass-модели, поэтому CrudApi (который ждёт struct()['class']) не
+ * подходит. Здесь просто проксируем запрос в trade и приводим ответ
+ * к тому виду, который ожидает наш фронт.
+ *
+ * Вызов идёт через IO\Core::callAction(), а не через IO\Core::call() —
+ * call() принимает только entity типа 'class' и сразу отдаёт DENY на
+ * 'model'/'api', а bmc.trade2.model.invoices2.* — это как раз 'model'.
+ *
+ * Список полей фильтрации/сортировки — 1:1 копия invoices_struct из
+ * legacy-шаблона invoices.html (строки ~80-227). Если в trade добавят
+ * новое поле в invoices_struct на своей стороне — его нужно продублировать
+ * и здесь, в FILTERABLE_FIELDS, иначе фронт не даст его выбрать.
+ */
+class InvoiceApi extends CoreApi
+{
+	// Точная копия invoices_struct из invoices.html — api_name => тип поля.
+	// Нужна для того, чтобы:
+	//  а) фронт мог построить те же самые фильтры/сортировки, что были;
+	//  б) мы могли отфильтровать мусорные ключи из $params['filter'] перед
+	//     тем, как отправлять их дальше в trade.
+	private const FILTERABLE_FIELDS = [
+		'invoice_number'    => 'number',
+		'ugmtimeAdd'        => 'date',
+		'ugmtimeChange'     => 'date',
+		'dateSale'          => 'date',
+		'type'              => 'select',
+		'delivery_method'   => 'select',
+		'warehouse_pkid'    => 'select',
+		'delivery_info'     => 'input',
+		'status'            => 'select',
+		'isPayed'           => 'select',
+		'products.tid'      => 'input',
+		'products_count'    => 'number',
+		'picker_login'      => 'input',
+		'referer_login'     => 'input',
+		'consultant_login'  => 'input',
+		'cashier_login'     => 'input',
+		'creator_login'     => 'input',
+		'client_pkid'       => 'input',
+		'client_cardnum'    => 'input',
+		'pkid'              => 'input',
+	];
+
+	// entity-имена в сервисе trade, зеркало вызовов из invoices.html
+	private const ENTITY_SEARCH = 'bmc.trade2.model.invoices2.getDataMore';
+	private const ENTITY_STAT   = 'bmc.trade2.model.invoices2.getStat';
+	private const ENTITY_OFFERS_SEARCH = 'bmc.trade2.model.offers.getData';
+	private const ENTITY_QRCODE_SEARCH = 'bmc.trade2.model.qrCode.getData';
+	private const ENTITY_GOODS_SEARCH = 'bmc.trade2.model.goods.getData';
+	private const ENTITY_CANCEL    = 'bmc.trade2.model.invoices2.cancel';
+	private const ENTITY_EDIT_SALE = 'bmc.trade2.model.invoices2.editSale';
+	private const ENTITY_WAREHOUSES_SEARCH = 'bmc.trade2.model.warehouses.getData';
+	private const ENTITY_DELIVERY_METHODS_SEARCH = 'bmc.trade2.model.deliveryMethods.getData';
+
+	public static function rules(): array
+	{
+		return [
+			'static' => [
+				'actionSearch' => 1,
+				'actionStat' => 1,
+				'actionFilterableFields' => 1,
+				'actionDetails' => 1,
+				'actionSearchGoods' => 1,
+				'actionFindUser' => 1,
+				'actionSearchOffers' => 1,
+				'actionVerifyQrCode' => 1,
+				'actionChangeStatus' => 1,
+				'actionGetWarehouses' => 1,
+				'actionGetDeliveryMethods' => 1,
+			],
+			'object' => [],
+		];
+	}
+
+	/**
+	 * Список инвойсов. Принимает те же filter/order/limit/start, что и
+	 * старый фронт слал напрямую в trade — просто прокидываем их дальше,
+	 * подставив company_pkid текущего пользователя (раньше это тоже
+	 * делалось на фронте, в setFilterParams()).
+	 */
+	public function doSearch(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$company_pkid = $this->resolveCompanyPkid($params);
+			if ($company_pkid <= 0) {
+				return $result->showResult([], 'company_pkid обязателен', EIO::VALIDATION);
+			}
+
+			$filter = $this->buildFilter($params, $company_pkid);
+			$order  = $this->buildOrder($params);
+			$limit  = (int) xarr($params, 'limit', 25);
+			$start  = (int) xarr($params, 'start', 0);
+
+			$search = trim((string) xarr($params, 'search', ''));
+
+			if ($search !== '' && !str_starts_with($search, 'pkid:')) {
+				$searchFilters = [
+					['=invoice_number' => $search],
+					['%client_pkid' => $search],
+					['%client_cardnum' => $search],
+				];
+
+				$items = [];
+				$seen = [];
+
+				foreach ($searchFilters as $searchFilter) {
+					$searchRes = \IO\Core::callAction(self::ENTITY_SEARCH, [
+						'filter' => array_merge(
+							['=company_pkid' => $company_pkid],
+							$searchFilter
+						),
+						'order' => $order,
+						'limit' => 1000,
+						'start' => 0,
+						'company' => true,
+						'getPaymentsCount' => true,
+					]);
+
+					if (!is_array($searchRes) || xarr($searchRes, 'error_code', null) != EIO::OK) {
+						continue;
+					}
+
+					foreach (xarr($searchRes, 'data', []) as $item) {
+						$pkid = (string) xarr($item, 'pkid', '');
+
+						if ($pkid !== '' && !isset($seen[$pkid])) {
+							$seen[$pkid] = true;
+							$items[] = $item;
+						}
+					}
+				}
+
+				return $result->showSuccess([
+					'items' => array_slice($items, $start, $limit),
+					'total' => count($items),
+				]);
+			}
+
+			// ВАЖНО: bmc.trade2.model.invoices2.getDataMore — entity типа
+			// 'model', а IO\Core::call() принимает только 'class' (см.
+			// проверку `if ($type != 'class') return DENY` в Core::call).
+			// Для 'model'/'api'/'io' нужен именно callAction() — он же сам
+			// разворачивает удалённый HTTP-ответ до $arr['res'] (или, при
+			// локальном вызове, ApiResult->toArray()), так что то, что
+			// возвращает callAction(), — это уже ровно то, что фронт видел
+			// как obj.res (error_code/data/count), без дополнительной
+			// обёртки — второй raз разворачивать через 'res' не нужно.
+			$res = \IO\Core::callAction(self::ENTITY_SEARCH, [
+				'filter' => $filter,
+				'order'  => $order,
+				'limit'  => $limit,
+				'start'  => $start,
+				// как и в invoices.html: подтягиваем данные компании и
+				// количество платежей одним запросом, без N+1 на фронте
+				'company' => true,
+				'getPaymentsCount' => true,
+			]);
+
+			if (!is_array($res) || xarr($res, 'error_code', null) != EIO::OK) {
+				return $result->showResult([], is_array($res) ? xarr($res, 'error_str', 'Не удалось получить список инвойсов из trade') : 'Trade-сервис вернул некорректный ответ', EIO::ERROR);
+			}
+
+			return $result->showSuccess([
+				'items' => xarr($res, 'data', []),
+				'total' => (int) xarr($res, 'count', 0),
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult([], $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(), EIO::ERROR);
+		}
+	}
+
+	/**
+	 * Статистика по тому же фильтру — зеркало loadStatMP() из invoices.html.
+	 */
+	public function doStat(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$company_pkid = $this->resolveCompanyPkid($params);
+			if ($company_pkid <= 0) {
+				return $result->showResult([], 'company_pkid обязателен', EIO::VALIDATION);
+			}
+
+			$filter = $this->buildFilter($params, $company_pkid);
+
+			$res = \IO\Core::callAction(self::ENTITY_STAT, [
+				'filter' => $filter,
+			]);
+
+			if (!is_array($res) || xarr($res, 'error_code', null) != EIO::OK) {
+				return $result->showResult([], is_array($res) ? xarr($res, 'error_str', 'Не удалось получить статистику инвойсов из trade') : 'Trade-сервис вернул некорректный ответ', EIO::ERROR);
+			}
+
+			return $result->showSuccess([
+				'invoices_count'      => xarr($res, 'invoices_count', 0),
+				'invoices_sum'        => xarr($res, 'invoices_sum', 0),
+				'invoices_sredn_sum'  => xarr($res, 'invoices_sredn_sum', 0),
+				'clients_sum'         => xarr($res, 'clients_sum', 0),
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult([], $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(), EIO::ERROR);
+		}
+	}
+
+	/**
+	 * Отдаёт фронту тот же набор фильтруемых/сортируемых полей, что раньше
+	 * рендерился в Twig из invoices_struct — чтобы UI фильтров можно было
+	 * строить динамически, а не хардкодить во Vue.
+	 */
+	public function doFilterableFields(ApiResult $result, array $params): ApiResult
+	{
+		return $result->showSuccess([
+			'fields' => self::FILTERABLE_FIELDS,
+		]);
+	}
+
+	/**
+	 * Полная карточка одного инвойса, включая products (реальный состав) —
+	 * зеркало запроса, который invoices.html делает при открытии окна
+	 * редактирования продажи/заказа/возврата (см. ~строка 12475: getDataMore
+	 * с filter.pkid + limit:1 + getQrcode:1 + getPayments:1). В обычном
+	 * списке (doSearch) products НЕ запрашиваются — там только сводный
+	 * products_count, полного состава там нет и не может быть смаплено.
+	 * ВАЖНО: products в trade — это массив физических единиц товара (у
+	 * каждой свой QR-код), а не строк заказа с количеством — на фронте
+	 * их нужно группировать по tid, чтобы получить нормальную позицию
+	 * "название + кол-во + цена" (см. groupInvoiceProducts в Invoices.vue).
+	 */
+	public function doDetails(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$company_pkid = $this->resolveCompanyPkid($params);
+			if ($company_pkid <= 0) {
+				return $result->showResult([], 'company_pkid обязателен', EIO::VALIDATION);
+			}
+
+			$pkid = (int) xarr($params, 'pkid', 0);
+			if ($pkid <= 0) {
+				return $result->showResult([], 'pkid обязателен', EIO::VALIDATION);
+			}
+
+			$res = \IO\Core::callAction(self::ENTITY_SEARCH, [
+				'filter' => [
+					'pkid' => $pkid,
+					'company_pkid' => $company_pkid,
+				],
+				'limit' => 1,
+				'company' => true,
+				/*'getPaymentsCount' => true,
+				'getQrcode' => true,
+				'getPayments' => true,   ---увеличивает время ответа*/
+			]);
+
+			if (!is_array($res) || xarr($res, 'error_code', null) != EIO::OK) {
+				return $result->showResult([], is_array($res) ? xarr($res, 'error_str', 'Не удалось получить инвойс из trade') : 'Trade-сервис вернул некорректный ответ', EIO::ERROR);
+			}
+
+			$data = xarr($res, 'data', []);
+			if (empty($data)) {
+				return $result->showResult([], 'Инвойс не найден', EIO::NOTFOUND);
+			}
+			
+			return $result->showSuccess([
+				'item' => $data[0],
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult([], $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(), EIO::ERROR);
+		}
+	}
+
+	/**
+ 	* Поиск товаров по названию/артикулу/штрихкоду/ИНТ для добавления в
+	* инвойс — зеркало typeahead source() из invoices.html (см. комментарий
+	* у ENTITY_GOODS_SEARCH). В отличие от legacy-вызова, здесь ОБЯЗАТЕЛЬНО
+	* передаём company_pkid в filter (как и doSearch/doStat/doDetails выше):
+	* в invoices.html компания бралась неявно из сессии браузера на домене
+	* самого trade, а при серверном проксировании (IO\Core::callAction) эта
+	* привязка не переносится сама — без явного company_pkid trade просто
+	* не находит товаров нужной компании и тихо отдаёт error_code=1 с
+	* пустым items, без какой-либо ошибки.
+	*/
+	public function doSearchGoods(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$query = trim((string) xarr($params, 'query', ''));
+			$limit = (int) xarr($params, 'limit', 10);
+
+			$res = \IO\Core::callAction(self::ENTITY_GOODS_SEARCH, [
+				'filter' => [
+					'%text' => $query,
+				],
+				'limit' => $limit,
+			]);
+
+			if (!is_array($res) || xarr($res, 'error_code', null) != EIO::OK) {
+				return $result->showResult([], is_array($res) ? xarr($res, 'error_str', 'Не удалось получить товары из trade') : 'Trade-сервис вернул некорректный ответ', EIO::ERROR);
+			}
+
+			return $result->showSuccess([
+				'items' => xarr($res, 'data', []),
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult([], $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(), EIO::ERROR);
+		}
+	}
+
+	/**
+	 * company_pkid может прийти двумя путями — и фронт реально шлёт его
+	 * именно вторым: как params.company_pkid (верхний уровень, как
+	 * задумывалось изначально), либо внутри params.filter.company_pkid
+	 * (так его кладёт MfModel.getInvoices(filter, ...), где filter — это
+	 * { company_pkid, ... }, собранный на странице, — по аналогии с
+	 * buildServerFilter() в Orders.vue). Проверяем оба места, чтобы не
+	 * зависеть от того, как именно фронт соберёт params.
+	 */
+	private function resolveCompanyPkid(array $params): int
+	{
+		$company_pkid = (int) xarr($params, 'company_pkid', 0);
+		if ($company_pkid > 0) {
+			return $company_pkid;
+		}
+
+		$filter = xarr($params, 'filter', []);
+		if (is_array($filter)) {
+			$company_pkid = (int) xarr($filter, 'company_pkid', 0);
+		}
+
+		return $company_pkid;
+	}
+
+	/**
+	 * Собирает filter для trade из входных $params + company_pkid.
+	 *
+	 * Поддерживает оба формата, которые умел слать legacy-фронт:
+	 *  - готовый "сырой" trade-фильтр (ключ = оператор+api_name, значение —
+	 *    массив условий), как строил setFilterParams() из invoices.html —
+	 *    в этом случае просто прокидываем его как есть, отфильтровав
+	 *    неизвестные api_name;
+	 *  - упрощённый плоский filter (api_name => значение) — на случай,
+	 *    если новый фронт (Vue) будет слать проще, без операторов.
+	 *
+	 * Плюс спецпараметр 'search' — свободный текстовый поиск, зеркало
+	 * '%text' / '%pkid' (poиск по 'pkid:123') из invoices_text в
+	 * invoices.html.
+	 */
+	private function buildFilter(array $params, int $company_pkid): array
+	{
+		$filter = [
+			'=company_pkid' => $company_pkid,
+		];
+
+		$rawFilter = xarr($params, 'filter', []);
+		if (is_array($rawFilter)) {
+			foreach ($rawFilter as $key => $value) {
+				// вырезаем оператор ('=', '!=', '%', '>' и т.п.) спереди,
+				// чтобы свериться со списком разрешённых полей
+				$apiName = ltrim((string) $key, '=!%<>~');
+				if ($apiName === 'company_pkid') {
+					// company_pkid всегда берём из проверенного параметра,
+					// а не из пришедшего с фронта фильтра
+					continue;
+				}
+				if (!isset(self::FILTERABLE_FIELDS[$apiName])) {
+					continue;
+				}
+				$filter[$key] = $value;
+			}
+		}
+
+		$search = trim((string) xarr($params, 'search', ''));
+
+		if ($search !== '') {
+			if (str_starts_with($search, 'pkid:')) {
+				$filter['%pkid'] = substr($search, 5);
+			} else {
+				$filter['=invoice_number'] = $search;
+			}
+		}
+
+		return $filter;
+	}
+
+	/**
+	 * order: {api_name: 'asc'|'desc'}, только по разрешённым полям.
+	 * Дефолт зеркалит invoicesSearch() из invoices.html — сортировка по
+	 * дате создания и pkid по убыванию, если фронт ничего не передал.
+	 */
+	private function buildOrder(array $params): array
+	{
+		$rawOrder = xarr($params, 'order', []);
+		$order = [];
+		if (is_array($rawOrder)) {
+			foreach ($rawOrder as $apiName => $dir) {
+				if (!isset(self::FILTERABLE_FIELDS[$apiName]) && $apiName !== 'pkid') {
+					continue;
+				}
+				$dir = strtolower((string) $dir) === 'asc' ? 'asc' : 'desc';
+				$order[$apiName] = $dir;
+			}
+		}
+
+		if (empty($order)) {
+			$order = [
+				'ugmtimeAdd' => 'desc',
+				'pkid' => 'desc',
+			];
+		}
+
+		return $order;
+	}
+
+	public function doFindUser(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$login = trim((string) xarr($params, 'login', ''));
+			if ($login === '') {
+				return $result->showResult([], 'login обязателен', EIO::VALIDATION);
+			}
+
+			$user = \IO\Core::call(
+				'com.class.user.findByLogin',
+				['login' => $login]
+			);
+
+			if (!is_array($user) || empty($user)) {
+				return $result->showResult([], 'Пользователь ' . $login . ' не найден', EIO::NOTFOUND);
+			}
+
+			return $result->showSuccess([
+				'pkid'  => xarr($user, 'pkid', 0),
+				'login' => xarr($user, 'login', $login),
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult([], $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(), EIO::ERROR);
+		}
+	}
+
+	public function doSearchOffers(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$tid = trim((string) xarr($params, 'tid', ''));
+			$offerType = (int) xarr($params, 'offer_type', 2); // зеркало EnumApi::OFFER_TYPE_LABELS, 2 = розница
+
+			if ($tid === '') {
+				return $result->showResult([], 'tid обязателен', EIO::VALIDATION);
+			}
+
+			// company_number сюда сознательно НЕ идёт: в легаси (invoices.html)
+			// этот параметр фильтра был закомментирован — поиск предложений
+			// всегда шёл по всем компаниям, только по tid/type/!=form. Если
+			// добавить его обратно, товары с company_number, отличным от
+			// company_number аккаунта, перестают находиться (проверено на
+			// реальных данных — items: [] при валидном tid).
+			$res = \IO\Core::callAction(self::ENTITY_OFFERS_SEARCH, [
+				'filter' => [
+					'tid' => $tid,
+					'!=form' => 4, // объявление — исключаем, как и в invoices.html
+					'type' => $offerType,
+				],
+				'limit' => 1000,
+			]);
+
+			if (!is_array($res) || xarr($res, 'error_code', null) != EIO::OK) {
+				return $result->showResult([], is_array($res) ? xarr($res, 'error_str', 'Не удалось получить предложения из trade') : 'Trade-сервис вернул некорректный ответ', EIO::ERROR);
+			}
+
+			return $result->showSuccess([
+				'items' => xarr($res, 'data', []),
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult([], $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(), EIO::ERROR);
+		}
+	}
+
+	public function doVerifyQrCode(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$tid = trim((string) xarr($params, 'tid', ''));
+			$qr_number = trim((string) xarr($params, 'qr_number', ''));
+			$warehouse_pkid = xarr($params, 'warehouse_pkid', '');
+
+			if ($tid === '' || $qr_number === '') {
+				return $result->showResult([], 'tid и qr_number обязательны', EIO::VALIDATION);
+			}
+
+			// creator_company_number сюда тоже сознательно НЕ идёт — в легаси
+			// он был закомментирован по той же причине, что и company_number
+			// в doSearchOffers (см. комментарий там): реальный QR-код может
+			// быть оприходован под company_number, отличным от аккаунта
+			// текущего пользователя, и фильтрация по нему ломает поиск.
+			$filter = [
+				'type' => [1, 4],
+				'tid' => $tid,
+				'qr_number' => $qr_number,
+			];
+			if ($warehouse_pkid !== '') {
+				$filter['warehouse'] = $warehouse_pkid;
+			}
+			
+			$res = \IO\Core::callAction(self::ENTITY_QRCODE_SEARCH, [
+				'filter' => $filter,
+				'limit' => 1,
+			]);
+
+			if (!is_array($res)) {
+				return $result->showResult(
+					[],
+					'В указанном месте товар (QR/Aztec код) не найден, т.к. возможно не оприходован либо не принят.',
+					EIO::VALIDATION
+				);
+			}
+
+			if (xarr($res, 'error_code', null) != EIO::OK) {
+				return $result->showResult(
+					[],
+					xarr($res, 'error_str', 'Не удалось проверить QR-код в trade'),
+					EIO::ERROR
+				);
+			}
+
+			$data = xarr($res, 'data', []);
+
+			if (empty($data)) {
+				return $result->showResult(
+					[],
+					'В указанном месте товар (QR/Aztec код) не найден, т.к. возможно не оприходован либо не принят.',
+					EIO::VALIDATION
+				);
+			}
+
+			$qr = $data[0];
+			if (!empty($qr['isSale'])) {
+				return $result->showResult([], 'Товар был продан' . (!empty($qr['invoice_number']) ? ' (продажа ' . $qr['invoice_number'] . ')' : ''), EIO::VALIDATION);
+			}
+			if (!empty($qr['isDeleted'])) {
+				return $result->showResult([], 'Товар был удален', EIO::VALIDATION);
+			}
+
+			return $result->showSuccess([
+				'item' => $qr,
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult([], $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(), EIO::ERROR);
+		}
+	}
+
+	/**
+	 * Изменение статуса инвойса (проведение/отмена) в BMC Trade.
+	 */
+	public function doChangeStatus(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$company_pkid = $this->resolveCompanyPkid($params);
+			if ($company_pkid <= 0) {
+				return $result->showResult([], 'company_pkid обязателен', EIO::VALIDATION);
+			}
+
+			$pkid = (int) xarr($params, 'pkid', 0);
+			if ($pkid <= 0) {
+				return $result->showResult([], 'pkid инвойса обязателен', EIO::VALIDATION);
+			}
+
+			if (!array_key_exists('status', $params) || $params['status'] === '') {
+				return $result->showResult([], 'status обязателен', EIO::VALIDATION);
+			}
+
+			$status = (int) $params['status'];
+
+			// Вызываем соответствующий метод сервиса trade
+			if ($status === -1) {
+				// Для отмены выбываем сущностный экшен cancel
+				$res = \IO\Core::callAction(self::ENTITY_CANCEL, [
+					'pkid'         => $pkid,
+					'company_pkid' => $company_pkid,
+				]);
+			} else {
+				// Для смены статуса на другой
+				$res = \IO\Core::callAction(self::ENTITY_EDIT_SALE, [
+					'pkid'         => $pkid,
+					'company_pkid' => $company_pkid,
+					'status'       => $status,
+				]);
+			}
+
+			// Проверка ответа от ядра
+			if (!is_array($res)) {
+				return $result->showResult([], 'Trade-сервис вернул пустой или некорректный ответ', EIO::ERROR);
+			}
+
+			$errorCode = xarr($res, 'error_code', null);
+			
+			// EIO::OK обычно 0, но в легаси-ответах trade встречался код 1, поэтому проверяем корректность сброса
+			if ($errorCode !== EIO::OK && $errorCode !== 0 && $errorCode !== '1') {
+				$errorStr = xarr($res, 'error_str', 'Не удалось изменить статус инвойса в trade');
+				return $result->showResult([], $errorStr, EIO::ERROR);
+			}
+
+			return $result->showSuccess([
+				'pkid'    => $pkid,
+				'status'  => $status,
+				'updated' => true,
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult(
+				[],
+				$e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+				EIO::ERROR
+			);
+		}
+	}
+
+	public function doGetWarehouses(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$company_pkid = (int) xarr($params, 'company_pkid', 0);
+
+			$res = \IO\Core::callAction(self::ENTITY_WAREHOUSES_SEARCH, [
+				'company_pkid' => $company_pkid,
+				'filter' => [
+					'type' => 1,
+				],
+				'limit' => 100000,
+			]);
+
+			if (!is_array($res) || xarr($res, 'error_code', null) != EIO::OK) {
+				return $result->showResult(
+					[],
+					is_array($res)
+						? xarr($res, 'error_str', 'Не удалось получить склады из Trade')
+						: 'Trade-сервис вернул некорректный ответ',
+					EIO::ERROR
+				);
+			}
+
+			return $result->showSuccess([
+				'items' => xarr($res, 'data', []),
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult(
+				[],
+				$e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+				EIO::ERROR
+			);
+		}
+	}
+
+	public function doGetDeliveryMethods(ApiResult $result, array $params): ApiResult
+	{
+		try {
+			$company_pkid = (int) xarr($params, 'company_pkid', 0);
+
+			$res = \IO\Core::callAction(self::ENTITY_DELIVERY_METHODS_SEARCH, [
+				'company_pkid' => $company_pkid,
+				'filter' => [
+					'isDeleted' => false,
+				],
+				'limit' => 100000,
+			]);
+
+			if (!is_array($res) || xarr($res, 'error_code', null) != EIO::OK) {
+				return $result->showResult(
+					[],
+					is_array($res)
+						? xarr($res, 'error_str', 'Не удалось получить способы доставки из Trade')
+						: 'Trade-сервис вернул некорректный ответ',
+					EIO::ERROR
+				);
+			}
+
+			return $result->showSuccess([
+				'items' => xarr($res, 'data', []),
+			]);
+		} catch (\Throwable $e) {
+			return $result->showResult(
+				[],
+				$e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine(),
+				EIO::ERROR
+			);
+		}
+	}
+}
