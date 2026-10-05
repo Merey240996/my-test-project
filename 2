@@ -1,0 +1,4400 @@
+<?php
+	// инвойсы
+	class InvoicesModel extends IOModel4
+	{
+		public static function rcp_rules()
+		{
+			return array(
+				'static' => array(
+					'actionShowNiceList' => 1,
+					'actionShowNiceFilter' => 1,
+					'actionShowNiceFilterField' => 1,
+					'actionNiceData' => 1,
+					'actionGetData' => 1,
+					'actionGetData2' => 1,
+					'actionGetData2More' => 1,
+					'actionGetData3' => 1,
+					'actionGetReport' => 1,
+					'actionShowAdd' => 1,
+					'actionAdd' => 1,
+					'actionAddFromBasket' => 1,
+					'actionAddBuyer' => 1,
+					'actionAddTerminal' => 1,
+					'actionEditTerminal' => 1,
+					'actionCancelTerminal' => 1,
+					'actionSetConsultant' => 1,
+					'actionAddConsultant' => 1,
+					'actionEditConsultant' => 1,
+					'actionShowEdit' => 1,
+					'actionEdit' => 1,
+					'actionShowDelete' => 1,
+					'actionDelete' => 1,
+					'actionDeleteClient' => 1,
+					'actionDeleteConsultant' => 1,
+					'actionEditField' => 1,
+					'actionGetFields' => 1,
+					'actionSetType' => 1,
+					'actionSetHide' => 1,
+					
+					// отчеты
+					'actionGetReportByCash' => 1,
+					'actionShowGetReportByCash' => 1,
+					'actionGetConsultantStat' => 1,
+					//'actionGetRefererStat' => 1,
+				),
+			);
+		}
+		
+		public static function getStruct($params)
+		{
+			global $ioSession, $ioEnum;
+			
+			$fields = array(
+				'pkid' => array(
+					'type' => 'hidden',
+					'showAdd' => false,
+					'hidden' => true,
+					'isPrimary' => true,
+					'export' => false,
+				),
+				
+				'invoice_number' => array(
+					'label' => 'Номер инвойса',
+					'type' => 'number',
+					'showEdit' => false,
+					'showAdd' => false,
+					'filter' => true,
+				),
+				'ugmtimeAdd' => array(
+					'label' => 'Дата создания',
+					'type' => 'date',
+					'showEdit' => false,
+					'showAdd' => false,
+					'filter' => true,
+					'date_format' => 'Y-m-d H:i:s',
+					'date_output_timezone' => $ioSession->user->timezone,
+				),
+				'dateSale' => array(
+					'label' => 'Дата продажи/возврата',
+					'type' => 'date',
+					'showAdd' => false,
+					'showEdit' => false,
+					'date_format' => 'Y-m-d H:i:s',
+					'date_output_timezone' => $ioSession->user->timezone,
+					'filter' => true,
+				),
+				'dateDelivery' => array(
+					'label' => 'Дата доставки',
+					'type' => 'date',
+					'hidden' => true,
+					'showAdd' => false,
+					'showEdit' => false,
+					'date_format' => 'Y-m-d H:i:s',
+					'date_output_timezone' => $ioSession->user->timezone,
+					'nowrap' => true,
+				),
+				'client_phone' => array(
+					'label' => 'Номер телефона',
+					'type' => 'hidden',
+					'hidden' => true,
+					//'showEdit' => false,
+					//'showAdd' => false,
+					'export' => false,
+				),
+				'warehouse_pkid' => array(
+					'label' => 'Место продажи/возврата',
+					'type' => 'select',
+					'entity' => 'bmc.trade2.model.warehouses.getData',
+					'foreignKey' => 'name',
+					'showEdit' => false,
+					'showAdd' => false,
+					'filter' => true,
+					'params' => array(
+						'limit' => 1000,
+					),
+				),
+				'client_pkid' => array(
+					'label' => 'ID клиента',
+					'type' => 'hidden',
+					'hidden' => true,
+					'showEdit' => false,
+					'showAdd' => false,
+					'export' => false,
+				),
+				'client_login' => array(
+					'label' => 'Клиент',
+					'type' => 'hidden',
+					'showEdit' => false,
+					'showAdd' => false,
+					'hidden' => true,
+					'export' => false,
+				),
+				'client' => array(
+					'type' => 'input',
+					'label' => 'Клиент',
+				),
+				// тип инвойса (0-создан, 1-акцептован, 2-принят продавцом, 3-оплачен, 4-доставлен)
+				/*'type' => array(
+					'label' => 'Тип инвойса',
+					'type' => 'select',
+					'options' => $ioEnum['invoices_type'],
+					'filter' => true,
+					// Не трогать! Не удалять!
+					'showEdit' => false,
+					'showAdd' => false,
+				),*/
+				'status' => array(
+					'label' => 'Статус инвойса',
+					'type' => 'select',
+					'options' => $ioEnum['invoices_statuses'],
+					'filter' => true,
+					// Не трогать! Не удалять!
+					'showEdit' => false,
+					'showAdd' => false,
+				),
+				'isPayed' => array(
+					'label' => 'Оплачен',
+					'type' => 'select',
+					'options' => $ioEnum['boolean'],
+					'filter' => true,
+					// Не трогать! Не удалять!
+					'showEdit' => false,
+					'showAdd' => false,
+				),
+				'products_count' => array(
+					'label' => 'Количество товаров',
+					'type' => 'input',
+					'showEdit' => false,
+					'showAdd' => false,
+					'filter' => true,
+				),
+				'amount' => array(
+					'label' => 'Сумма предложения',
+					'type' => 'money',
+					//'filter' => true,
+					// Не трогать! Не удалять!
+					'showAdd' => false,
+					'showEdit' => false,
+				),
+				'discount' => array(
+					'label' => 'Скидка',
+					'type' => 'money',
+					//'filter' => true,
+					// Не трогать! Не удалять!
+					'showAdd' => false,
+					'showEdit' => false,
+				),
+				'amount_delivery' => array(
+					'label' => 'Стоимость доставки',
+					'type' => 'money',
+					//'filter' => true,
+					// Не трогать! Не удалять!
+					'showAdd' => false,
+					'showEdit' => false,
+				),
+				'amount_paid' => array(
+					'label' => 'Сумма продажи/возврата',
+					'type' => 'money',
+					//'filter' => true,
+					// Не трогать! Не удалять!
+					'showAdd' => false,
+					'showEdit' => false,
+				),
+				/*'prepayment' => array(
+					'label' => 'Сумма залога',
+					'type' => 'money',
+					//'filter' => true,
+					// Не трогать! Не удалять!
+					'showAdd' => false,
+					'showEdit' => false,
+				),*/
+				'amount_cash' => array(
+					'label' => 'Сумма наличных',
+					'type' => 'money',
+					//'filter' => true,
+					// Не трогать! Не удалять!
+					'showAdd' => false,
+					'showEdit' => false,
+				),
+				
+				'picker_pkid' => array(
+					'label' => 'ID комплектовщика',
+					'type' => 'hidden',
+					'hidden' => true,
+					// Они ставятся по правам доступа в edit и add_pre
+					'showEdit' => false,
+					'showAdd' => false,
+					'export' => false,
+				),
+				'picker_login' => array(
+					'label' => 'Комплектовщик',
+					'type' => 'input',
+					'hidden' => true,
+					// Они ставятся по правам доступа в edit и add_pre
+					'showEdit' => false,
+					'showAdd' => false,
+					'filter' => true,
+				),
+				'consultant_pkid' => array(
+					'label' => 'ID консультанта',
+					'type' => 'hidden',
+					'hidden' => true,
+					// Они ставятся по правам доступа в edit и add_pre
+					'showEdit' => false,
+					'showAdd' => false,
+					'export' => false,
+				),
+				'consultant_login' => array(
+					'label' => 'Консультант',
+					'type' => 'input',
+					'hidden' => true,
+					// Они ставятся по правам доступа в edit и add_pre
+					'showEdit' => false,
+					'showAdd' => false,
+					'filter' => true,
+				),
+				'cashier_pkid' => array(
+					'label' => 'ID кассира',
+					'type' => 'hidden',
+					'hidden' => true,
+					// Они ставятся по правам доступа в edit и add_pre
+					'showEdit' => false,
+					'showAdd' => false,
+					'export' => false,
+				),
+				'cashier_login' => array(
+					'label' => 'Кассир',
+					'type' => 'input',
+					// Они ставятся по правам доступа в edit и add_pre
+					'showEdit' => false,
+					'showAdd' => false,
+					'filter' => true,
+				),
+				'products' => array(
+					'label' => 'Товары',
+					'type' => 'hidden',
+					'hidden' => true,
+					// Они ставятся по правам доступа в edit и add_pre
+					'showAdd' => false,
+					'showEdit' => false,
+					'export' => false,
+				),
+				'delivery_info' => array(
+					'label' => 'Информация для доставки',
+					'type' => 'text',
+					'hidden' => true,
+					//'showEdit' => false,
+					//'showAdd' => false,
+					//'export' => false,
+				),
+				'tracknumber' => array(
+					'label' => 'Трек номер',
+					'type' => 'input',
+					'hidden' => true,
+					//'showEdit' => false,
+					//'showAdd' => false,
+					//'export' => false,
+				),
+				
+				'creator_pkid' => array(
+					'label' => 'ID создателя',
+					'type' => 'hidden',
+					'hidden' => true,
+					// Они ставятся в add_pre по ioSession и никогда не меняются
+					'showAdd' => false,
+					'showEdit' => false,
+					'export' => false,
+				),
+				'creator_login' => array(
+					'label' => 'Создатель',
+					'type' => 'input',
+					// Они ставятся в add_pre по ioSession и никогда не меняются
+					'showEdit' => false,
+					'showAdd' => false,
+					'filter' => true,
+				),
+				
+				'products_code_good' => array(
+					'type' => 'hidden',
+					'hidden' => true,
+					'showAdd' => false,
+					'showEdit' => false,
+					'export' => false,
+				),
+				'products_tids' => array(
+					'label' => 'ИНТ товаров',
+					'type' => 'hidden',
+					'hidden' => true,
+					'showAdd' => false,
+					'showEdit' => false,
+					'export' => false,
+				),
+			);
+			return array(
+				'fields' => $fields,
+				'primary' => array('pkid'),
+			);
+		}
+		
+		public static function getParams($params)
+		{
+			$result = array(
+				'class' => 'app.class.invoices',
+				'model' => 'bmc.trade2.model.invoices',
+				'classSearch' => 'app.class.invoices.dbsearch3', 
+				'forceDelete' => 0,
+				'renderForm' => 'io.view.nicetable.niceForm',
+				'renderFilterElem' => 'io.view.nicetable.niceFilterElem',
+				'renderFilter' => 'io.view.nicetable.niceFilter',
+			);
+			return $result;
+		}
+		
+		public static function event($event = '', $params = array())
+		{
+			global $ioData, $ioSession, $ioProjects;
+			
+			$action = xarr($params, 'action', array());
+			$struct = xarr($params, 'struct', array());
+			$object = xarr($params, 'object', array());
+			$olddata = xarr($params, 'olddata', array());
+			$form = xarr($params, 'form', array());
+			$p = xarr($params, 'params', array());
+			
+			$company_pkid = xarr($params, 'company_pkid');
+			if($company_pkid == null)
+			{
+				$company_pkid = xarr($p, 'company_pkid', $ioSession->user->getCompanyID());
+			}
+			
+			if($event == 'init')
+			{
+				// Check if console
+				$is_cli = (php_sapi_name() == 'cli');
+				if($is_cli) return EIO_OK;
+				
+				if($ioSession->user->permission('bmc.trade2.access')
+				and $ioSession->user->permission('bmc.trade2.invoice'))
+				{
+					if(in_array($action, array(
+						'actionShowNiceList',
+						'actionShowNiceFilter',
+						'actionShowNiceFilterField',
+						'actionNiceData',
+						'actionGetData',
+						'actionGetFields',
+						'actionShowEdit',
+						'actionEdit',
+						'actionEditDo',
+						'actionGetConsultantStat',
+					)))
+					{
+						return EIO_OK;
+					}
+					
+					if(in_array($action, array(
+						'actionAdd',
+						'actionAddDo',
+						'actionSetConsultant',
+						'actionAddConsultant',
+						'actionEditConsultant',
+						'actionDelete',
+						'actionDeleteConsultant',
+						'actionDeleteDo',
+						'actionEditField',
+						'actionShowAdd',
+						'actionShowDelete',
+					)))
+					{
+						if($ioSession->user->permission('bmc.trade2.invoice.manage'))
+						{
+							return EIO_OK;
+						}
+					}
+					
+					if(in_array($action, array(
+						'actionGetReport',
+						'actionGetReportByCash',
+						'actionShowGetReportByCash',
+					)))
+					{
+						//if($ioSession->user->permission('bmc.trade2.getReport'))
+						//{
+							return EIO_OK;
+						//}
+					}
+				}
+				if(!$ioSession->user->isGuest())
+				{
+					if(in_array($action, array(
+						'actionAddFromBasket',
+						'actionAddBuyer',
+						'actionDeleteClient',
+						'actionGetData2',
+						'actionGetData2More',
+						'actionGetData3',
+						'actionSetHide',
+						//'actionGetRefererStat',
+					)))
+					{
+						return EIO_OK;
+					}
+				}
+				if(in_array($action, array(
+					'actionAddTerminal',
+					'actionEditTerminal',
+					'actionCancelTerminal',
+					'actionGetData3',
+					'actionSetType',
+				)))
+				{
+					return EIO_OK;
+				}
+				return EIO_NOPERMISSIONS;
+			}
+			
+			/*
+				invoice type:
+				0 => 'Создан покупателем',
+				1 => 'Акцептован покупателем',
+				2 => 'Акцептован продавцом',
+				3 => 'Оплачен покупателем',
+				4 => 'Доставлен покупателю',
+				11 => 'Возврат создан',
+				12 => 'Возврат совершен',
+			*/
+			elseif($event == 'add_pre' or $event == 'edit_pre')
+			{
+				if($event == 'add_pre')
+				{
+					$form_event = xarr($p, 'form_event');
+					$object->company_pkid = $ioSession->user->getCompanyID();
+					$object->creator_pkid = $ioSession->user->id;
+					$object->creator_login = $ioSession->user->login;
+					$object->type = 0;
+					$object->status = 0;
+				}
+				
+				$do_sale = false;
+				$do_delivery = false;
+				
+				// изменяем значения status (ранее type)
+				$form_event = xarr($p, 'form_event');
+				if(xarr($object, 'type') == null)
+				{
+					$object->type = 0;
+				}
+				if(xarr($object, 'status') == null)
+				{
+					$object->status = 0;
+				}
+				
+				if($ioSession->user->permission('bmc.trade2.invoice.manage'))
+				{
+					if(!xarr($object, 'isPayed', false) and in_array(xarr($object, 'status'), array(0, 1, 2, 3, 4, 5, 6)))
+					{
+						$form_event = xarr($p, 'form_event');
+						$client_pkid = xarr($p, 'client_pkid');
+						if(strpos($client_pkid, 'crm_') === 0)
+						{
+							$object->client_pkid = null;
+							$crm_client_pkid = intval(substr($client_pkid, 4));
+							if($crm_client_pkid != 0)
+							{
+								$object->client_pkid = $client_pkid;
+							}
+						}
+						elseif(strpos($client_pkid, 'user_') === 0)
+						{
+							$object->client_pkid = null;
+							$user_client_pkid = intval(substr($client_pkid, 5));
+							if($user_client_pkid != 0)
+							{
+								$object->client_pkid = $client_pkid;
+							}
+						}
+						
+						$warehouse_pkid = xarr($p, 'warehouse_pkid');
+						$object->warehouse_pkid = $warehouse_pkid;
+					}
+				}
+				if(in_array(xarr($object, 'status'), array(0, 1, 2, 3, 4, 5, 6, 7)))
+				{
+					if($ioSession->user->permission('bmc.trade2.invoice.items.add'))
+					{
+						$products = xarr($p, 'products');
+						$object->products = $products;
+					}
+					if(!xarr($object, 'isPayed', false))
+					{
+						if($ioSession->user->permission('bmc.trade2.invoice.sale'))
+						{
+							$currency = xarr($p, 'currency');
+							
+							// общая сумма товаров, которая вычисляется по предложениям (без учета доставки, общей скидки и аванса)
+							$amount = xarr($p, 'amount');
+							$amount_value = xarr($amount, 'value');
+							$object->amount = $amount;
+							
+							// стоимость доставки (скидка на доставку не действует)
+							$amount_delivery = xarr($p, 'amount_delivery');
+							$amount_delivery_value = xarr($amount_delivery, 'value');
+							$object->amount_delivery = $amount_delivery;
+							
+							// сумма внесенного аванса (предоплата)
+							/*$prepayment = xarr($p, 'prepayment');
+							$prepayment_value = xarr($prepayment, 'value');
+							$object->prepayment = $prepayment;*/
+							
+							// сумма инвойса (за которую были куплены товары + доставка + скидка + аванс)
+							$amount_paid = xarr($p, 'amount_paid'); // сумма продажи
+							$amount_paid_value = xarr($amount_paid, 'value');
+							$object->amount_paid = $amount_paid;
+							
+							// сумма наличных (сколько денег дал клиент. например товар стоит 85, клиент дал 100, тогда в этом поле будет 100)
+							$amount_cash = xarr($p, 'amount_cash'); // сумма наличными
+							$amount_cash_value = xarr($amount_cash, 'value');
+							$object->amount_cash = $amount_cash;
+							
+							if($amount_paid_value == 'NaN') $amount_paid_value = $amount_value + $amount_delivery_value;
+							
+							// раcсчитываем скидку
+							$discount = ($amount_value + $amount_delivery_value) - $amount_paid_value; 
+							$object->discount = array(
+								'currency' => xarr($amount_cash, 'currency'),
+								'value' => $discount,
+								'pay_type' => null,
+							);
+						}
+					}
+				}
+				
+				if($form_event == 'form_accept_and_close')
+				{
+					$object->status = 2;
+					
+					// уведомление клиента по телеграму
+					/*if(strpos(xarr($object, 'client_pkid', ''), 'user_') === 0)
+					{
+						$client_user_login = substr(xarr($object, 'client_pkid', ''), 5);
+						$sendTelegram = IOCore::callAction(
+							'telegram.model.kdtappbot.sendTextByLogin',
+							array(
+								'login' => $client_user_login,
+								'message' => array(
+									'Уважаемый клиент BMC Sales!'."\n\n".
+									'Ваш интернет-заказ № "'.xarr($object, 'invoice_number', '???').'" сменил статус на "Акцептован продавцом".'."\n".
+									'Заказ теперь можно оплачивать.'."\n".
+									'https:'.xarr($ioProjects, 'com').'/profile/goods/orders'."\n\n".
+									'Спасибо.',
+								),
+							)
+						);
+						$suser = IOCore::call(
+							'com.class.user.findByLoginMore',
+							array(
+								'login' => $client_user_login,
+							)
+						);
+						$suser = array_shift($suser);
+						$suser_email = xarr($suser, 'email');
+						if($suser_email)
+						{
+							$sendEmail = IOCore::callAction(
+								'com.notice.model.notices.sendOnlyEmail',
+								array(
+									'type' => 0, // тип уведомления (0: по умолчанию, 1: информация, 2: предупреждение, 3: ошибка)
+									'cat' => 0, // 0=bell, 1=billhorn, 2=coin1, 3=coin2, 4=webinar, 5=webinar2
+									'link' => 'http:'.xarr($ioProjects, 'com').'/profile/goods/orders',
+									'title' => 'Смена статуса у заказа № "'.xarr($object, 'invoice_number', '???').'". BMC Sales',
+									'message' => (
+										'Ваш интернет-заказ № "'.xarr($object, 'invoice_number', '???').'" сменил статус на "Акцептован продавцом".<br/>'.
+										'Заказ теперь можно оплачивать.'
+									),
+									'emails' => $suser_email,
+								)
+							);
+						}
+					}*/
+				}
+				
+				if($form_event == 'form_sale_and_close')
+				{
+					if(xarr($object, 'isPayed', false))
+					{
+						$object->error_str = 'Продажа уже оформлена';
+						return EIO_UNKNOWN;
+					}
+					// можно продавать пользователю
+					if($ioSession->user->permission('bmc.trade2.invoice.sale'))
+					{
+						if(!xarr($object, 'isPayed', false))
+						{
+							if(xarr($object, 'status', 0) < 2)
+							{
+								$object->status = 2;
+							}
+							$object->isPayed = true;
+							$do_sale = true;
+						}
+					}
+					else
+					{
+						$object->error_str = 'Вы не имеете полномочий продать товар';
+						return EIO_UNKNOWN;
+					}
+				}
+				
+				if($form_event == 'form_delivery_and_close')
+				{
+					if(xarr($object, 'status') == 12)
+					{
+						$object->error_str = 'Доставка уже оформлена';
+						return EIO_UNKNOWN;
+					}
+					// можно отмечать доставку пользователю
+					if($ioSession->user->permission('bmc.trade2.invoice.delivery'))
+					{
+						if(in_array(xarr($object, 'status'), array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)))
+						{
+							// если инвойс находится в состоянии не продан
+							if(!xarr($object, 'isPayed', false))
+							{
+								if($ioSession->user->permission('bmc.trade2.invoice.sale'))
+								{
+									$do_sale = true;
+									$object->isPayed = true;
+								}
+								else
+								{
+									$object->error_str = 'Вы не имеете полномочий продать товар';
+									return EIO_UNKNOWN;
+								}
+							}
+							$object->status = 12;
+							$do_delivery = true;
+						}
+					}
+					else
+					{
+						$object->error_str = 'Вы не имеете полномочий оформить доставку';
+						return EIO_UNKNOWN;
+					}
+				}
+				
+				//v_dump($form_event);
+				//v_dump($do_sale);
+				//v_dump($object->products);
+				
+				// проверяем корректность оформления продажи
+				if($do_sale)
+				{
+					$amount = xarr($p, 'amount'); // сумма предложения
+					if(!valid_money($amount))
+					{
+						$object->error_str = 'Сумма предложения';
+						return EIO_VALIDATION_FIELD;
+					}
+					else
+					{
+						$object->amount = $amount;
+					}
+					
+					$amount_delivery = xarr($p, 'amount_delivery'); // сумма доставки
+					if(!valid_money($amount_delivery))
+					{
+						$object->error_str = 'Сумма доставки';
+						return EIO_VALIDATION_FIELD;
+					}
+					else
+					{
+						$object->amount_delivery = $amount_delivery;
+					}
+					
+					/*$prepayment = xarr($p, 'prepayment'); // сумма залога
+					if(!valid_money($prepayment))
+					{
+						$object->error_str = 'Сумма залога';
+						return EIO_VALIDATION_FIELD;
+					}
+					else
+					{
+						$object->prepayment = $prepayment;
+					}*/
+					
+					$amount_paid = xarr($p, 'amount_paid'); // сумма продажи
+					if(!valid_money($amount_paid))
+					{
+						$object->error_str = 'Сумма продажи';
+						return EIO_VALIDATION_FIELD;
+					}
+					else
+					{
+						$object->amount_paid = $amount_paid;
+					}
+					
+					//$amount_cash = xarr($object, 'amount_cash'); // внесенная сумма
+					$amount_cash = xarr($p, 'amount_cash'); // внесенная сумма
+					if(!valid_money($amount_cash))
+					{
+						$object->error_str = 'Всего наличными';
+						return EIO_VALIDATION_FIELD;
+					}
+					else
+					{
+						$object->amount_cash = $amount_cash;
+					}
+					
+					// рассчитываем наличные
+					$amount_value = xarr(xarr($object, 'amount', array()), 'value', 0);
+					$amount_delivery_value = xarr(xarr($object, 'amount_delivery', array()), 'value', 0);
+					$amount_cash_value = xarr(xarr($object, 'amount_cash', array()), 'value', 0);
+					$amount_paid_value = xarr(xarr($object, 'amount_paid', array()), 'value', 0);
+					$amount_odd = ($amount_paid_value + $amount_delivery_value) - $amount_cash_value; // сдача
+					if($amount_odd <= 0)
+					{
+						$amount_cash_value += $amount_odd;
+					}
+					else
+					{
+						// если сдача ушла в минус, запретить оформлять продажу и доставку
+						$object->error_str = 'Сдача не может быть отрицательной';
+						return EIO_UNKNOWN;
+					}
+					$object->amount_cash = array(
+						'currency' => xarr($amount_cash, 'currency'),
+						'value' => $amount_cash_value,
+						'pay_type' => xarr($amount_cash, 'pay_type'),
+					);
+					
+					// проверка на валюту
+					$currency = xarr($p, 'currency');
+					$currencies = array(
+						xarr(xarr($object, 'discount', array()), 'currency'),
+						xarr(xarr($object, 'amount', array()), 'currency'),
+						xarr(xarr($object, 'amount_delivery', array()), 'currency'),
+						xarr(xarr($object, 'amount_cash', array()), 'currency'),
+						xarr(xarr($object, 'amount_paid', array()), 'currency'),
+					);
+					foreach($currencies as $key => $val)
+					{
+						if($val != $currency or !$val)
+						{
+							$object->error_str = 'Валюта';
+							return EIO_VALIDATION_FIELD;
+							break;
+						}
+					}
+					
+					/*
+					$discount = xarr($p, 'discount'); // скидка
+					if(!valid_money($discount))
+					{
+						$object->error_str = 'Скидка';
+						return EIO_VALIDATION_FIELD;
+					}
+					else
+					{
+						$object->discount = $discount;
+					}
+					*/
+					
+					/*
+					$amount_odd = xarr($p,'amount_odd'); // сдача
+					$amount_odd = floatval($amount_odd);
+					if($amount_odd < 0)
+					{
+						//TODO: если сдача ушла в минус, запретить оформлять продажу и доставку
+						$object->error_str = 'Сдача';
+						return EIO_VALIDATION_FIELD;
+					}
+					*/
+					
+					if(count(xarr($object, 'products', array())) == 0)
+					{
+						$object->error_str = 'Добавьте товары';
+						return EIO_UNKNOWN;
+					}
+					
+					// все ок, можно оформить продажу
+					$object->cashier_pkid = $ioSession->user->id;
+					$object->cashier_login = $ioSession->user->login;
+				}
+				
+				// проверяем корректность доставки товара клиенту
+				if($do_delivery)
+				{
+					// начинаем процесс списания QR кодов
+					// типы ошибок
+					/*
+						0 - нашли все QR коды все в порядке
+						1 - не найдены все QR коды
+						2 - один из товаров уже продали
+						3 - один из товаров удален
+						4 - QR не этой компании
+						5 - не акцептованы товары
+						6 - добавьте товары
+						7 - один из товаров не найден в базе
+						8 - вы добавили лишний товар
+						9 - не найден серийный номер
+					*/
+					$findError = 0;
+					$findQRUID = null;
+					$products = xarr($p, 'products');
+					$object_products = xarr($object, 'products', array());
+					$serial_index = array();
+					$qr_uids = array();
+					
+					// чистим массив $products (новые установленные QR коды) от тех что уже есть в базе
+					// в итоге должны остаться только те QR коды, для которых установлен новый серийный номер
+					// либо не установлен вообще. Здесь идет сверка QR кодов формы с теми что в базе
+					foreach($object_products as $i => $obj)
+					{
+						$tid = xarr($obj, 'tid');
+						$size_pkid = xarr($obj, 'size_pkid');
+						$color_pkid = xarr($obj, 'color_pkid');
+						$gender_pkid = xarr($obj, 'gender_pkid');
+						$qr_code_creator_number = xarr($obj, 'qr_code_creator_number');
+						$qr_code_serial_number = xarr($obj, 'qr_code_serial_number');
+						foreach($products as $j => $product)
+						{
+							$product_tid = xarr($product, 'tid');
+							$product_size_pkid = xarr($product, 'size_pkid');
+							$product_color_pkid = xarr($product, 'color_pkid');
+							$product_gender_pkid = xarr($product, 'gender_pkid');
+							$product_qr_code_creator_number = xarr($product, 'qr_code_creator_number');
+							$product_qr_code_serial_number = xarr($product, 'qr_code_serial_number');
+							
+							if(
+								$tid == $product_tid and 
+								$size_pkid == $product_size_pkid and 
+								$color_pkid == $product_color_pkid and 
+								$gender_pkid == $product_gender_pkid and 
+								$qr_code_creator_number == $product_qr_code_creator_number and 
+								$qr_code_serial_number == $product_qr_code_serial_number
+							)
+							{
+								$object_products[$i]['__qr_correct'] = true;
+								unset($products[$j]);
+								break;
+							}
+						}
+					}
+					
+					// устанавливаем новые QR коды если они пустые, из тех, что остались в массиве $products
+					foreach($object_products as $i => $obj)
+					{
+						$tid = xarr($obj, 'tid');
+						$size_pkid = xarr($obj, 'size_pkid');
+						$color_pkid = xarr($obj, 'color_pkid');
+						$gender_pkid = xarr($obj, 'gender_pkid');
+						
+						$__qr_correct = xarr($obj, '__qr_correct', false);
+						if($__qr_correct) continue;
+						
+						$object_products[$i]['qr_code_creator_number'] = null;
+						$object_products[$i]['qr_code_serial_number'] = null;
+						$obj['qr_code_creator_number'] = null;
+						$obj['qr_code_serial_number'] = null;
+						$qr_code_creator_number = xarr($obj, 'qr_code_creator_number');
+						$qr_code_serial_number = xarr($obj, 'qr_code_serial_number');
+						
+						if($qr_code_creator_number == null and $qr_code_serial_number == null)
+						{
+							foreach($products as $j => $product)
+							{
+								$product_tid = xarr($product, 'tid');
+								$product_size_pkid = xarr($product, 'size_pkid');
+								$product_color_pkid = xarr($product, 'color_pkid');
+								$product_gender_pkid = xarr($product, 'gender_pkid');
+								$product_qr_code_creator_number = xarr($product, 'qr_code_creator_number');
+								$product_qr_code_serial_number = xarr($product, 'qr_code_serial_number');
+								
+								if(
+									$tid == $product_tid and 
+									$size_pkid == $product_size_pkid and 
+									$color_pkid == $product_color_pkid and 
+									$gender_pkid == $product_gender_pkid
+								)
+								{
+									$object_products[$i]['qr_code_creator_number'] = $product_qr_code_creator_number;
+									$object_products[$i]['qr_code_serial_number'] = $product_qr_code_serial_number;
+									unset($products[$j]);
+									$object_products[$i]['__qr_correct'] = true;
+									break;
+								}
+							}
+						}
+					}
+					
+					if(count($products) > 0)
+					{
+						$findError = 8;
+						goto __exit;
+					}
+					
+					$flag = false;
+					foreach($object_products as $i => $obj)
+					{
+						$__qr_correct = xarr($obj, '__qr_correct', false);
+						if($__qr_correct) continue;
+						$flag = true;
+						
+						$tid = xarr($obj, 'tid');
+						$size_pkid = xarr($obj, 'size_pkid');
+						$color_pkid = xarr($obj, 'color_pkid');
+						$gender_pkid = xarr($obj, 'gender_pkid');
+						
+						$findQRUID = $tid;
+						
+						break;
+					}
+					
+					// остался один товар не отмеченный QR кодом
+					if($flag)
+					{
+						$findError = 5;
+						goto __exit;
+					}
+					
+					// билдим $qr_uids
+					foreach($object_products as $key => $obj)
+					{
+						$tid = xarr($obj, 'tid');
+						$type = xarr($obj, 'qr_code_type');
+						$size_pkid = xarr($obj, 'size_pkid');
+						$color_pkid = xarr($obj, 'color_pkid');
+						$gender_pkid = xarr($obj, 'gender_pkid');
+						$qr_code_creator_number = xarr($obj, 'qr_code_creator_number');
+						$qr_code_serial_number = xarr($obj, 'qr_code_serial_number');
+						if($qr_code_creator_number != null and $qr_code_serial_number != null and $tid != null)
+						{
+							$serial_index[$tid][$qr_code_creator_number][$qr_code_serial_number] = $key;
+							if($type == QR_TYPE_PRODUCT_OTHER)
+							{
+								$qr_uid = QRBuild(
+									QR_TYPE_PRODUCT_OTHER,
+									array(
+										'code' => $qr_code_serial_number,
+									)
+								);
+							}
+							else
+							{
+								$qr_uid = QRBuild(
+									QR_TYPE_PRODUCT,
+									array(
+										'tid' => $tid,
+										'qr_number' => $qr_code_serial_number,
+										'company_number' => $qr_code_creator_number,
+									)
+								);
+							}
+							if($qr_uid != null)
+							{
+								if(isset($qr_uids[$qr_uid]))
+								{
+									$object->error_str = 'В инвойсе найден дубликат: '.$qr_uid;
+									return EIO_UNKNOWN;
+								}
+								$qr_uids[$qr_uid] = $qr_uid;
+							}
+						}
+						else
+						{
+							$findError = 5;
+							goto __exit;
+						}
+					}
+					$save_qr_uids = $qr_uids;
+					
+					$qr_uids2 = $qr_uids;
+					if(count($qr_uids) > 1)
+					{
+						$qr_uids2 = array_values($qr_uids);
+					}
+					else
+					{
+						if(count($qr_uids) == 1)
+						{
+							$qr_uids2 = array_shift($qr_uids);
+						}
+					}
+					// ищем QR коды в базе
+					$r = IOCore::call(
+						'app.class.qrCodes.dbsearch2',
+						array(
+							'filter' => array(
+								'uid' => $qr_uids2,
+								'type' => array(
+									QR_TYPE_PRODUCT,
+									QR_TYPE_PRODUCT_OTHER,
+								),
+							),
+							'limit' => count($qr_uids2),
+							'out' => 'array',
+						)
+					);
+					$res = xarr($r, 'res', array());
+					
+					// проверяем действительно ли сопадают размеры товара с оформляемыми QR кодами
+					foreach($res as $c)
+					{
+						$qr_code_tid = xarr($c, 'tid');
+						$qr_code_tud = xarr($c, 'uid');
+						$qr_code_type = xarr($c, 'type');
+						$qr_code_size_pkid = xarr($c, 'size_pkid');
+						$qr_code_color_pkid = xarr($c, 'color_pkid');
+						$qr_code_gender_pkid = xarr($c, 'gender_pkid');
+						$qr_code_creator_number = xarr($c, 'creator_company_number');
+						$qr_code_serial_number = xarr($c, 'qr_number');
+						$qr_code_si = xarr($c, 'si');
+						$qr_code_count_si = xarr($c, 'count');
+						
+						// если QR код товара не принадлежит, то мы не можем его продать
+						if(xarr($c, 'company_pkid') != $ioSession->user->getCompanyID() or $ioSession->user->getCompanyID() == null)
+						{
+							$findQRUID = xarr($c, 'uid');
+							$findError = 4;
+							goto __exit;
+						}
+						
+						if(xarr($c, 'isDeleted'))
+						{
+							$findQRUID = xarr($c, 'uid');
+							$findError = 3;
+							goto __exit;
+						}
+						
+						if(xarr($c, 'isSale'))
+						{
+							$findQRUID = xarr($c, 'uid');
+							$findError = 2;
+							goto __exit;
+						}
+						
+						if(isset($serial_index[$qr_code_tid][$qr_code_creator_number][($qr_code_type == QR_TYPE_PRODUCT_OTHER ? mb_substr($qr_code_uid, 2) : $qr_code_serial_number)]))
+						{
+							$product_key = $serial_index[$qr_code_tid][$qr_code_creator_number][($qr_code_type == QR_TYPE_PRODUCT_OTHER ? mb_substr($qr_code_uid, 2) : $qr_code_serial_number)];
+							$product = xarr($object_products, $product_key);
+							unset($serial_index[$qr_code_tid][$qr_code_creator_number][($qr_code_type == QR_TYPE_PRODUCT_OTHER ? mb_substr($qr_code_uid, 2) : $qr_code_serial_number)]);
+							
+							if($product != null)
+							{
+								$product_tid = xarr($product, 'tid');
+								$product_size_pkid = xarr($product, 'size_pkid');
+								$product_color_pkid = xarr($product, 'color_pkid');
+								$product_gender_pkid = xarr($product, 'gender_pkid');
+								
+								//n_dump($c->get_all_data());
+								//n_dump($product);
+								
+								if($product_tid == $qr_code_tid and
+									$product_size_pkid == $qr_code_size_pkid and
+									$product_color_pkid == $qr_code_color_pkid and
+									$product_gender_pkid == $qr_code_gender_pkid
+								)
+								{
+									$object_products[$product_key]['qr_code_creator_number'] = $qr_code_creator_number;
+									$object_products[$product_key]['qr_code_serial_number'] = ($qr_code_type == QR_TYPE_PRODUCT_OTHER ? mb_substr($qr_code_uid, 2) : $qr_code_serial_number);
+									$object_products[$product_key]['qr_code_si'] = $qr_code_si;
+									$object_products[$product_key]['qr_code_count_si'] = $qr_code_count_si;
+									$uid = xarr($c, 'uid');
+									if(isset($save_qr_uids[$uid])) unset($save_qr_uids[$uid]);
+								}
+								else
+								{
+									if($qr_code_type == QR_TYPE_PRODUCT_OTHER)
+									{
+										$findQRUID = $qr_code_uid;
+									}
+									else
+									{
+										$findQRUID = '1-'.$product_tid.'-'.$qr_code_creator_number.'-'.$qr_code_serial_number;
+									}
+									$findError = 10;
+									goto __exit;
+								}
+							}
+							else
+							{
+								if($qr_code_type == QR_TYPE_PRODUCT_OTHER)
+								{
+									$findQRUID = $qr_code_uid;
+								}
+								else
+								{
+									$findQRUID = '1-'.$qr_code_tid.'-'.$qr_code_creator_number.'-'.$qr_code_serial_number;
+								}
+								$findError = 9;
+								goto __exit;
+							}
+						}
+						else
+						{
+							if($qr_code_type == QR_TYPE_PRODUCT_OTHER)
+							{
+								$findQRUID = $qr_code_uid;
+							}
+							else
+							{
+								$findQRUID = '1-'.$tid.'-'.$qr_code_creator_number.'-'.$qr_code_serial_number;
+							}
+							$findError = 9;
+							goto __exit;
+						}
+					}
+					
+					// остались товары, которые не нашли
+					if(count($save_qr_uids) != 0)
+					{
+						$findQRUID = array_shift($save_qr_uids);
+						$findError = 7;
+						goto __exit;
+					}
+					
+					//n_dump($object->products);
+					//n_dump($object_products);
+					//$findError = -1;
+					//goto __exit;
+					
+					__exit:
+					
+					if($findError != 0)
+					{
+						if($findError == 5)
+						{
+							$object->error_str = 'Акцептуйте все товары';
+						}
+						elseif($findError == 2)
+						{
+							$object->error_str = 'Товар '.$findQRUID.' уже был продан'; 
+						}
+						elseif($findError == 3)
+						{
+							$object->error_str = 'Товар '.$findQRUID.' был удален'; 
+						}
+						elseif($findError == 4)
+						{
+							$object->error_str = 'Товар '.$findQRUID.' не принадлежит вашей компании. Вы не можете его продать'; 
+						}
+						elseif($findError == 7)
+						{
+							$object->error_str = 'Товар '.$findQRUID.' не найден'; 
+						}
+						elseif($findError == 8)
+						{
+							$object->error_str = 'Вы добавили лишний товар'; 
+						}		
+						elseif($findError == 9)
+						{
+							$object->error_str = 'Серийный номер '.$findQRUID.' не найден'; 
+						}
+						elseif($findError == 10)
+						{
+							$object->error_str = 'У серийного номера '.$findQRUID.' не совпадает цвер, размер либо пол'; 
+						}
+						return EIO_UNKNOWN;
+					}
+					
+					$object->products = $object_products;
+				}
+				
+				// оформляем продажу
+				if($do_sale)
+				{
+					$object->dateSale = time();
+					
+					// уведомление клиента по телеграму
+					/*if(strpos(xarr($object, 'client_pkid', ''), 'user_') === 0)
+					{
+						$client_user_login = substr(xarr($object, 'client_pkid', ''), 5);
+						$sendTelegram = IOCore::callAction(
+							'telegram.model.kdtappbot.sendTextByLogin',
+							array(
+								'login' => $client_user_login,
+								'message' => array(
+									'Уважаемый клиент BMC Sales!'."\n\n".
+									'Ваш интернет-заказ № "'.xarr($object, 'invoice_number', '???').'" сменил статус на "Оплачен".'."\n".
+									'В случае выбора услуги доставки, ожидайте связи со службой доставки.'."\n".
+									'Если же выбрана доставка самовывозом, то можете забрать ваш заказ.'."\n".
+									'https:'.xarr($ioProjects, 'com').'/profile/goods/orders'."\n\n".
+									'Спасибо.',
+								),
+							)
+						);
+						$suser = IOCore::call(
+							'com.class.user.findByLoginMore',
+							array(
+								'login' => $client_user_login,
+							)
+						);
+						$suser = array_shift($suser);
+						$suser_email = xarr($suser, 'email');
+						if($suser_email)
+						{
+							$sendEmail = IOCore::callAction(
+								'com.notice.model.notices.sendOnlyEmail',
+								array(
+									'type' => 0, // тип уведомления (0: по умолчанию, 1: информация, 2: предупреждение, 3: ошибка)
+									'cat' => 0, // 0=bell, 1=billhorn, 2=coin1, 3=coin2, 4=webinar, 5=webinar2
+									'link' => 'http:'.xarr($ioProjects, 'com').'/profile/goods/orders',
+									'title' => 'Смена статуса у заказа № "'.xarr($object, 'invoice_number', '???').'". BMC Sales',
+									'message' => (
+										'Ваш интернет-заказ № "'.xarr($object, 'invoice_number', '???').'" сменил статус на "Оплачен".<br/>'.
+										'<br/>'.
+										'В случае выбора услуги доставки, ожидайте связи со службой доставки.<br/>'.
+										'Если же выбрана доставка самовывозом, то можете забрать ваш заказ.<br/>'.
+										'Спасибо.'
+									),
+									'emails' => $suser_email,
+								)
+							);
+						}
+					}*/
+				}
+				// оформляем доставку товара клиенту
+				if($do_delivery)
+				{
+					$qr_uids = array();	
+					
+					foreach(xarr($object, 'products', array()) as $key => $obj)
+					{
+						$tid = xarr($obj, 'tid');
+						$qr_code_type = xarr($obj, 'qr_code_type');
+						$qr_code_creator_number = $obj['qr_code_creator_number'];
+						$qr_code_serial_number = $obj['qr_code_serial_number'];
+						//$object_products[$key]['qr_code_creator_number'] = null;
+						//$object_products[$key]['qr_code_serial_number'] = null;
+						//$serial_index[$tid][$qr_code_creator_number][$qr_code_serial_number] = $key;
+						if($qr_code_creator_number != null and $qr_code_serial_number != null and $tid != null)
+						{
+							if($qr_code_type == QR_TYPE_PRODUCT_OTHER)
+							{
+								$qr_uid = QRBuild(
+									QR_TYPE_PRODUCT_OTHER,
+									array(
+										'code' => $qr_code_serial_number,
+									)
+								);
+							}
+							else
+							{
+								$qr_uid = QRBuild(
+									QR_TYPE_PRODUCT, 
+									array(
+										'tid' => $tid,
+										'qr_number' => $qr_code_serial_number,
+										'company_number' => $qr_code_creator_number,
+									)
+								);
+							}
+							if($qr_uid != null)
+							{
+								$qr_uids[$qr_uid] = $qr_uid;
+							}
+						}
+					}
+					
+					$qr_uids2 = $qr_uids;
+					if(count($qr_uids) > 1)
+					{
+						$qr_uids2 = array_values($qr_uids);
+					}
+					else
+					{
+						if(count($qr_uids) == 1)
+						{
+							$qr_uids2 = array_shift($qr_uids);
+						}
+					}
+					// ищем QR коды в базе
+					$r = IOCore::call(
+						'app.class.qrCodes.dbsearch2',
+						array(
+							'filter' => array(
+								'uid' => $qr_uids2,
+								'type' => array(
+									QR_TYPE_PRODUCT,
+									QR_TYPE_PRODUCT_OTHER,
+								),
+							),
+							'limit' => count($qr_uids2),
+						)
+					);
+					$res = xarr($r, 'res', array());
+					
+					// все в порядке можно оформлять продажу. 
+					// списываем товары за раз, без пробегов
+					$r = IOCore::call(
+						'app.class.qrCodes.dbUpdate',
+						array(
+							'filter' => array(
+								'uid' => $qr_uids2,
+								'type' => array(
+									QR_TYPE_PRODUCT,
+									QR_TYPE_PRODUCT_OTHER,
+								),
+							),
+							'update' => array(
+								//'parent_uid' => null,
+								'warehouse' => null,
+								'warehouse_uid' => null,
+								'isSale' => true,
+								'dateSale' => xarr($object, 'dateSale'),
+								'invoice_number' => xarr($object, 'invoice_number'),
+								'invoice_pkid' => xarr($object, 'pkid'),
+							),
+						)
+					);
+					foreach($res as $c)
+					{
+						// добавим в движение товаров и уменьшим остатки
+						IOCore::call(
+							'app.class.goodsBalance.addBalance',
+							array(
+								'company_pkid' => xarr($c, 'company_pkid'),
+								'tid' => xarr($c, 'tid'),
+								
+								// уберем отсюда
+								'old' => array(
+									'warehouse' => xarr($c, 'warehouse'),
+									'color_pkid' => xarr($c, 'color_pkid'),
+									'size_pkid' => xarr($c, 'size_pkid'),
+									'gender_pkid' => xarr($c, 'gender_pkid'),
+								),
+								
+								'count' => xarr($c, 'count'),
+							)
+						);
+						IOCore::call(
+							'app.class.qrCodesMovingHistory.itemsSale',
+							array(
+								'company_pkid' => xarr($c, 'company_pkid'),
+								'warehouse_source' => xarr($c, 'warehouse'),
+								'warehouse_dest' => null,
+								'box_source' => xarr($c, 'parent_uid'),
+								//'box_dest' => null,
+								'box_dest' => xarr($c, 'parent_uid'),
+								'qr_uid' => xarr($c, 'uid'),
+								'color_pkid' => xarr($c, 'color_pkid'),
+								'size_pkid' => xarr($c, 'size_pkid'),
+								'gender_pkid' => xarr($c, 'gender_pkid'),
+								'si' => xarr($c, 'si'),
+								'count' => xarr($c, 'count'),
+								'login_sender' => $ioSession->user->login,
+								'login_take' => null,
+								'account_sender' => $ioSession->user->account,
+								'account_take' => null,
+								'company_pkid_sender' => $ioSession->user->getCompanyID(),
+								'company_pkid_take' => null,
+							)
+						);
+					}
+					
+					$object->dateDelivery = time();
+					
+					// уведомление клиента по телеграму
+					if(strpos(xarr($object, 'client_pkid', ''), 'user_') === 0)
+					{
+						$client_user_login = substr(xarr($object, 'client_pkid', ''), 5);
+						$sendTelegram = IOCore::callAction(
+							'telegram.model.kdtappbot.sendTextByLogin',
+							array(
+								'login' => $client_user_login,
+								'message' => array(
+									'Уважаемый клиент BMC Sales!'."\n\n".
+									'Ваш интернет-заказ № "'.xarr($object, 'invoice_number', '???').'" сменил статус на "Доставлен".'."\n".
+									'Спасибо за покупку. Покупайте еще!'."\n".
+									'https:'.xarr($ioProjects, 'com').'/profile/goods/orders'
+								),
+							)
+						);
+						$suser = IOCore::call(
+							'com.class.user.findByLoginMore',
+							array(
+								'login' => $client_user_login,
+							)
+						);
+						$suser = array_shift($suser);
+						$suser_email = xarr($suser, 'email');
+						if($suser_email)
+						{
+							$sendEmail = IOCore::callAction(
+								'com.notice.model.notices.sendOnlyEmail',
+								array(
+									'type' => 0, // тип уведомления (0: по умолчанию, 1: информация, 2: предупреждение, 3: ошибка)
+									'cat' => 0, // 0=bell, 1=billhorn, 2=coin1, 3=coin2, 4=webinar, 5=webinar2
+									'link' => 'http:'.xarr($ioProjects, 'com').'/profile/goods/orders',
+									'title' => 'Смена статуса у заказа № "'.xarr($object, 'invoice_number', '???').'". BMC Sales',
+									'message' => (
+										'Ваш интернет-заказ № "'.xarr($object, 'invoice_number', '???').'" сменил статус на "Доставлен".<br/>'.
+										'Спасибо за покупку. Покупайте еще!'
+									),
+									'emails' => $suser_email,
+								)
+							);
+						}
+					}
+				}
+				// Конец: Оформляем доставку товара клиенту
+				
+				return 1;
+			}
+			
+			elseif($event == 'delete')
+			{
+				//if($object->type > 2)
+				if(xarr($object, 'isPayed', false) or !in_array(xarr($object, 'status'), array(-1, 0, 1, 2, 3, 4, 5, 6, 7)))
+				{
+					$form->fields['raw-data']['raw-data'] = 'Вы не можете удалить инвойс, так как уже была оформлена продажа либо доставка';
+					$form->formButtons = array(
+						'close' => array(
+							'label' => 'Закрыть',
+							'event' => 'form_close',
+							'type' => 'single',
+							'style' => 'primary',
+						),
+					);
+				}
+				return EIO_OK;
+			}
+			
+			elseif($event == 'delete_pre')
+			{
+				if(xarr($object, 'isPayed', false) or !in_array(xarr($object, 'status'), array(-1, 0, 1, 2, 3, 4, 5, 6, 7, 101)))
+				{
+					if(xarr($object, 'type') == 0)
+					{
+						$object->error_str = 'Вы не можете удалить инвойс, так как уже была оформлена продажа либо доставка';
+					}
+					else
+					{
+						$object->error_str = 'Вы не можете удалить инвойс, так как уже был осуществлен возврат';
+					}
+					return EIO_UNKNOWN;
+				}
+				return EIO_OK;
+			}
+			
+			elseif($event == 'searchFilter')
+			{
+				$params['xfilter'] = array(
+					'company_pkid' => $company_pkid,
+					'isDeleted' => false,
+				);
+				$filter = parent::event($event, $params);
+				return $filter;
+			}
+			
+			elseif($event == 'getObjectFilter')
+			{
+				$params['xfilter'] = array(
+					'company_pkid' => $company_pkid,
+					'isDeleted' => false,
+				);
+				$filter = parent::event($event, $params);
+				//n_dump($filter);
+				return $filter;
+			}
+			
+			elseif($event == 'search_post')
+			{
+				$data = xarr($ioData, 'data2');
+				$crm_clients_pkid = array();
+				$user_clients_login = array();
+				
+				foreach($data as $i => $row)
+				{
+					// получение pkid клиентов
+					$client_pkid = xarr($row, 'client_pkid');
+					// проверка начинается ли с crm_ ?
+					if(strpos($client_pkid, 'crm_') === 0)
+					{
+						$client_pkid = substr($client_pkid, 4);
+						$crm_clients_pkid[$client_pkid] = $client_pkid;
+					}
+					// проверка начинается ли с user_ ?
+					elseif(strpos($client_pkid, 'user_') === 0)
+					{
+						$client_login = substr($client_pkid, 5);
+						$user_clients_login[] = $client_login;
+					}
+				}
+				
+				$crm_clients_index = array();
+				$crm_clients = array();
+				if(count($crm_clients_pkid) > 0)
+				{
+					$res = IOCore::callAction(
+						'bmc.crm.model.crm.crmClient.find',
+						array(
+							'filter' => array(
+								'pkid' => array_values($crm_clients_pkid),
+								'isDeleted' => false,
+							),
+							'limit' => count($crm_clients_pkid),
+						)
+					);
+					//v_dump($res);
+					$crm_clients = xarr($res, 'data', array());
+					foreach($crm_clients as $key =>  $obj)
+					{
+						$crm_clients_index[$obj['pkid']] = $key;
+					}
+				}
+				
+				$user_clients = array();
+				if(count($user_clients_login) > 0)
+				{
+					$user_clients = IOCore::call(
+						'com.class.user.findByLogin',
+						array(
+							'login' => $user_clients_login,
+						)
+					);
+				}
+				
+				//v_dump($crm_clients_index);
+				
+				//TODO: Здесь нужно получить список баз, чтобы писать в какой базе находится клиент
+				// если несколько выводить все в дополнительной подсказке (или одну), нужно решить
+				
+				foreach($data as $i => $row)
+				{
+					$client_pkid = xarr($row, 'client_pkid');
+					
+					// проверка начинается ли с crm_ ?
+					if(strpos($client_pkid, 'crm_') === 0)
+					{
+						//$crm_clients_pkid = substr($client_pkid, 4);
+						$client_pkid = substr($client_pkid, 4);
+						//$crm_index = xarr($crm_clients_index, $crm_clients_pkid);
+						$crm_index = xarr($crm_clients_index, $client_pkid);
+						$client = xarr($crm_clients, $crm_index);
+						//v_dump($client);
+						if($client !== null)
+						{
+							$cl_client_number = xarr($client, 'client_number_l');
+							$cl_database_name = xarr($client, 'database_name');
+							$cl_sname = xarr($client, 'sname_s');
+							$cl_fname = xarr($client, 'fname_s');
+							$cl_lname = xarr($client, 'lname_s');
+							$ioData['data'][$i]['client'] = $cl_sname.' '.$cl_fname.' '.$cl_lname;
+							
+							// Костыль !!!!
+							$cl_sname = xarr($client, 'myFieldKorrektnoeImya_s');
+							$cl_fname = xarr($client, 'myFieldKorrektnayaFamiliya_s');
+							$cl_lname = xarr($client, 'myFieldKorrektnoeOtchestvo_s');
+							$ioData['data'][$i]['client'] .= ' '.$cl_fname.' '.$cl_sname.' '.$cl_lname;
+							
+							$ioData['data'][$i]['client'] .= '<br/>(№'.$cl_client_number.' / '.$cl_database_name.')';
+						}
+					}
+					// проверка начинается ли с user_ ?
+					elseif(strpos($client_pkid, 'user_') === 0)
+					{
+						$client_login = substr($client_pkid, 5);
+						$client = xarr($user_clients, $client_login);
+						if($client !== null)
+						{
+							$cl_id = xarr($client, 'id');
+							$cl_sname = xarr($client, 'sname');
+							$cl_fname = xarr($client, 'fname');
+							$cl_lname = xarr($client, 'lname');
+							$ioData['data'][$i]['client'] = $cl_sname.' '.$cl_fname.' '.$cl_lname.' ('.$client_login.', id:'.$cl_id.')';
+						}
+					}
+					// проверка начинается ли с text_ ?
+					elseif(strpos($client_pkid, 'text_') === 0)
+					{
+						$client_fio = substr($client_pkid, 5);
+						if($client_fio !== null)
+						{
+							$ioData['data'][$i]['client'] = $client_fio;
+						}
+					}
+					
+					if(!xarr($row, 'warehouse_pkid'))
+					{
+						$ioData['data'][$i]['warehouse_pkid'] = 'Не указано';
+					}
+					
+					$type = xarr($row, 'type');
+					$status = xarr($row, 'status');
+					//if(in_array($type, array(0, 1, 2, 3, 4)))
+					if(in_array($status, array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12)))
+					{
+						$ioData['data'][$i]['buttons']['editReturn']['value'] = false;
+						$ioData['data'][$i]['buttons2']['deleteReturn']['value'] = false;
+						// для nicetable.js, иначе при нажатии кнопки поиск кнопка отобразится, а это нам не нужно
+						$ioData['data'][$i]['buttons']['deleteReturn']['value'] = false;
+					}
+					//elseif(in_array($type, array(11, 12)))
+					elseif(in_array($status, array(101, 102)))
+					{
+						$ioData['data'][$i]['buttons']['editInvoice']['value'] = false;
+						$ioData['data'][$i]['buttons2']['deleteInvoice']['value'] = false;
+						// для nicetable.js, иначе при нажатии кнопки поиск кнопка отобразится, а это нам не нужно
+						$ioData['data'][$i]['buttons']['deleteInvoice']['value'] = false;
+					}
+					elseif($status == -1)
+					{
+						if($type == 0) // продажа
+						{
+							$ioData['data'][$i]['buttons']['editReturn']['value'] = false;
+						}
+						elseif($type == 1) // возврат
+						{
+							$ioData['data'][$i]['buttons']['editInvoice']['value'] = false;
+						}
+						
+						$ioData['data'][$i]['buttons2']['deleteReturn']['value'] = false;
+						// для nicetable.js, иначе при нажатии кнопки поиск кнопка отобразится, а это нам не нужно
+						$ioData['data'][$i]['buttons']['deleteReturn']['value'] = false;
+						
+						$ioData['data'][$i]['buttons2']['deleteInvoice']['value'] = false;
+						// для nicetable.js, иначе при нажатии кнопки поиск кнопка отобразится, а это нам не нужно
+						$ioData['data'][$i]['buttons']['deleteInvoice']['value'] = false;
+					}
+				}
+				
+				parent::event($event, $params); //Вызываем старый event
+			}
+			
+			return parent::event($event, $params);
+		}
+		
+		public static function doShowAdd($result, $params)
+		{
+			$params['renderForm'] = 'app.view.trade.invoices.addedit';
+			return parent::doShowAdd($result, $params);
+		}
+		
+		public static function doShowEdit($result, $params)
+		{
+			$params['renderForm'] = 'app.view.trade.invoices.addedit';
+			return parent::doShowEdit($result, $params);
+		}
+		
+		// отчеты
+		public static function doGetReportByCash($result, $params)
+		{
+			global $ioSession;
+			$date = xarr($params, 'date', '0000-00-00');
+			$date_begin = iostrtotimestamp($date.' 00:00:00', null, $ioSession->user->timezone);
+			$date_end = iostrtotimestamp($date.' 23:59:59', null, $ioSession->user->timezone);
+			
+			$result->data = IOCore::call(
+				'app.class.invoices.dbGroupBy',
+				array(
+					'filter' => array(
+						'company_pkid' => $ioSession->user->getCompanyID(),
+						'$or' => array(
+							array(
+								'type' => 0, // продажа
+								'isPayed' => true,
+								'$and' => array(
+									array('>=dateSale' => $date_begin),
+									array('<=dateSale' => $date_end),
+								),
+							),
+							array(
+								'type' => 1, // возврат
+								'isPayed' => true,
+								'$and' => array(
+									array('>=dateSale' => $date_begin), //dateDelivery
+									array('<=dateSale' => $date_end), //dateDelivery
+								),
+							),
+						),
+						'isDeleted' => false,
+					),
+					'groupBy' => array(
+						'warehouse_pkid',
+						'cashier_login',
+					),
+					'reduce' => (
+						'function (obj, prev){'.
+							'prev.count += 1;'.
+							'if(obj.status == 102){'.
+								'prev.return_product_count += obj.products_count;'.
+								'prev.return_count += 1;'.
+								'if((typeof obj.amount_paid) != "undefined" && obj.amount_paid != null) prev.return_amount_paid.push(obj.amount_paid);'.
+								'if((typeof obj.amount_cash) != "undefined" && obj.amount_cash != null) prev.return_amount_cash.push(obj.amount_cash);'.
+								'prev.return_number.push(obj.invoice_number);'.
+							'} else {'.
+								'prev.sale_product_count +=obj.products_count;'.
+								'prev.sale_count += 1;'.
+								'if((typeof obj.amount_paid) != "undefined" && obj.amount_paid != null) prev.sale_amount_paid.push(obj.amount_paid);'.
+								'if((typeof obj.amount_cash) != "undefined" && obj.amount_cash != null) prev.sale_amount_cash.push(obj.amount_cash);'.
+								'prev.sale_number.push(obj.invoice_number);'.
+							'}'.
+						'}'
+					),
+					'initial' => array(
+						'return_product_count' => 0,
+						'return_amount_paid' => array(),
+						'return_amount_cash' => array(),
+						'return_number' => array(),
+						'sale_product_count' => 0,
+						'sale_amount_paid' => array(),
+						'sale_amount_cash' => array(),
+						'sale_number' => array(),
+						'sale_count' => 0,
+						'return_count' => 0,
+						'count' => 0,
+					),
+				)
+			);
+			$result->error_code = EIO_OK;
+			return $result;
+		}
+		
+		public static function doShowGetReportByCash($result, $params)
+		{
+			$result->error_code = EIO_OK;
+			IOCore::renderPlain('app.view.trade.invoices.reports.by_cash', array());
+			return $result;
+		}
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		
+		// изменение консультанта инвойса
+		public static function doSetConsultant($result, $params)
+		{
+			global $ioSession;
+			
+			$pkid = xarr($params, 'pkid');
+			$consultant_pkid = xarr($params, 'consultant_pkid', $ioSession->user->id);
+			$consultant_login = xarr($params, 'consultant_login', $ioSession->user->login);
+			
+			if($pkid == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Не указан pkid инвойса';
+				goto __exit;
+			}
+			
+			$r = IOCore::call(
+				'app.class.invoices.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+				)
+			);
+			$res = xarr($r, 'res', array());
+			$obj = array_shift($res);
+			if($obj == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Инвойс не найден';
+				goto __exit;
+			}
+			if(xarr($obj, 'company_pkid') != $ioSession->user->getCompanyID())
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Вы не можете изменить консультанта инвойса чужой компании';
+				goto __exit;
+			}
+			//if(xarr($obj, 'type') > 2)
+			if(xarr($obj, 'status') > 7 or xarr($obj, 'isPayed', false))
+			{
+				$result->error_code = EIO_USER - 2;
+				$result->error_str = 'Вы не можете изменить консультанта инвойса, так как уже была оформлена продажа либо доставка';
+				goto __exit;
+			}
+			if(xarr($obj, 'consultant_pkid') != $consultant_pkid
+			or xarr($obj, 'consultant_login') != $consultant_login)
+			{
+				// сохранение изменений
+				$obj->consultant_pkid = $consultant_pkid;
+				$obj->consultant_login = $consultant_login;
+				$obj->update();
+				$result->error_code = xarr($obj, 'error_code', EIO_FALSE);
+				$result->error_str = xarr($obj, 'error_str', '');
+				goto __exit;
+			}
+			
+			$result->pkid = $pkid;
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		// добавление инвойса консультантом через мобильное приложение
+		public static function doAddConsultant($result, $params)
+		{
+			global $ioSession;
+			
+			$warehouse_pkid = xarr($params, 'warehouse_pkid');
+			$referer_pkid = xarr($params, 'referer_pkid');
+			$referer_login = xarr($params, 'referer_login');
+			$client_pkid = xarr($params, 'client_pkid');
+			$client_cardnum = xarr($params, 'client_cardnum');
+			//$amount_paid = floatval(xarr($params, 'amount_paid', 0));
+			$products = xarr($params, 'products', array());
+			
+			if($referer_login == '') $referer_login = null;
+			
+			if($warehouse_pkid == null)
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Не указано место продажи';
+				goto __exit;
+			}
+			
+			/*if($client_pkid == null)
+			{
+				$result->error_code = EIO_USER - 2;
+				$result->error_str = 'Не указан клиент';
+				goto __exit;
+			}*/
+			
+			/*if(count($products) <= 0)
+			{
+				$result->error_code = EIO_USER - 3;
+				$result->error_str = 'Не указаны товары';
+				goto __exit;
+			}*/
+			
+			
+			$c = IOCore::Instance('app.class.invoices');
+			$c->client_pkid = null;
+			if(strpos($client_pkid, 'crm_') === 0)
+			{
+				$crm_client_pkid = substr($client_pkid, 4);
+				if($crm_client_pkid != '')
+				{
+					$c->client_pkid = $client_pkid;
+				}
+			}
+			elseif(strpos($client_pkid, 'user_') === 0)
+			{
+				$user_client_pkid = substr($client_pkid, 5);
+				if($user_client_pkid != '')
+				{
+					$c->client_pkid = $client_pkid;
+				}
+			}
+			$c->client_cardnum = $client_cardnum;
+			$c->warehouse_pkid = $warehouse_pkid;
+			$c->company_pkid = $ioSession->user->getCompanyID();
+			$c->creator_pkid = $ioSession->user->id;
+			$c->creator_login = $ioSession->user->login;
+			$c->consultant_pkid = $ioSession->user->id;
+			$c->consultant_login = $ioSession->user->login;
+			$c->referer_pkid = $referer_pkid;
+			$c->referer_login = $referer_login;
+			//$c->type = 2;
+			$c->status = 6; // комплектуется
+			/*$c->amount_paid = array(
+				'value' => $amount_paid,
+				'currency' => 'KZT',
+				'pay_type' => PAY_TYPE_CASH,
+			);*/
+			$c->amount_cash = array(
+				'value' => 0,
+				'currency' => 'KZT',
+				'pay_type' => PAY_TYPE_CASH,
+			);
+			$c->discount = array(
+				'value' => 0,
+				'currency' => 'KZT',
+				'pay_type' => PAY_TYPE_CASH,
+			);
+			/*$c->prepayment = array(
+				'value' => 0,
+				'currency' => 'KZT',
+				'pay_type' => PAY_TYPE_CASH,
+			);*/
+			$c->products = $products;
+			
+			$fullcost = 0;
+			foreach($products as $product)
+			{
+				// подсчет общей стоимости
+				$product_discount = xarr($product, 'discount');
+				$product_cost_per_unit = xarr(xarr($product, 'cost_per_unit'), 'value');
+				if($product_discount != null and $product_discount != '')
+				{
+					$fullcost += ($product_cost_per_unit - (($product_cost_per_unit / 100) * $product_discount));
+				}
+				else
+				{
+					$fullcost += $product_cost_per_unit;
+				}
+			}
+			$c->amount = array(
+				'value' => $fullcost,
+				'currency' => 'KZT',
+				'pay_type' => PAY_TYPE_CASH,
+			);
+			$c->amount_paid = array(
+				'value' => $fullcost,
+				'currency' => 'KZT',
+				'pay_type' => PAY_TYPE_CASH,
+			);
+			$c->create();
+			
+			$result->pkid = xarr($c, 'pkid');
+			
+			$result->error_code = xarr($c, 'error_code', EIO_FALSE);
+			$result->error_str = xarr($c, 'error_str', '');
+			
+			__exit:
+			return $result;
+		}
+		
+		// изменение инвойса консультантом через мобильное приложение
+		public static function doEditConsultant($result, $params)
+		{
+			global $ioSession;
+			
+			$pkid = xarr($params, 'pkid');
+			$warehouse_pkid = xarr($params, 'warehouse_pkid');
+			$referer_pkid = xarr($params, 'referer_pkid');
+			$referer_login = xarr($params, 'referer_login');
+			$client_pkid = xarr($params, 'client_pkid');
+			$client_cardnum = xarr($params, 'client_cardnum');
+			//$amount_paid = floatval(xarr($params, 'amount_paid', 0));
+			$products = xarr($params, 'products', array());
+			
+			if($referer_login == '') $referer_login = null;
+			
+			if($pkid == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Не указан pkid инвойса';
+				goto __exit;
+			}
+			
+			if($warehouse_pkid == null)
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Не указано место продажи';
+				goto __exit;
+			}
+			
+			/*if($client_pkid == null)
+			{
+				$result->error_code = EIO_USER - 2;
+				$result->error_str = 'Не указан клиент';
+				goto __exit;
+			}*/
+			
+			/*if(count($products) <= 0)
+			{
+				$result->error_code = EIO_USER - 3;
+				$result->error_str = 'Не указаны товары';
+				goto __exit;
+			}*/
+			
+			$r = IOCore::call(
+				'app.class.invoices.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+				)
+			);
+			$res = xarr($r, 'res', array());
+			$obj = array_shift($res);
+			if($obj == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Инвойс не найден';
+				goto __exit;
+			}
+			if(xarr($obj, 'status', 0) > 7 or xarr($obj, 'isPayed', false))
+			{
+				$result->error_code = EIO_USER - 4;
+				$result->error_str = 'Вы не можете изменить инвойс, так как уже была оформлена продажа или доставка';
+				goto __exit;
+			}
+			
+			$obj->client_pkid = null;
+			if(strpos($client_pkid, 'crm_') === 0)
+			{
+				$crm_client_pkid = substr($client_pkid, 4);
+				if($crm_client_pkid != '')
+				{
+					$obj->client_pkid = $client_pkid;
+				}
+			}
+			elseif(strpos($client_pkid, 'user_') === 0)
+			{
+				$user_client_pkid = substr($client_pkid, 5);
+				if($user_client_pkid != '')
+				{
+					$obj->client_pkid = $client_pkid;
+				}
+			}
+			$obj->client_cardnum = $client_cardnum;
+			$obj->referer_pkid = $referer_pkid;
+			$obj->referer_login = $referer_login;
+			$obj->warehouse_pkid = $warehouse_pkid;
+			/*$obj->amount_paid = array(
+				'currency' => 'KZT',
+				'value' => $amount_paid,
+				'pay_type' => null,
+			);*/
+			$obj->amount_cash = array(
+				'currency' => 'KZT',
+				'value' => 0,
+				'pay_type' => null,
+			);
+			$obj->discount = array(
+				'currency' => 'KZT',
+				'value' => 0,
+				'pay_type' => null,
+			);
+			/*$obj->prepayment = array(
+				'currency' => 'KZT',
+				'value' => 0,
+				'pay_type' => null,
+			);*/
+			$obj->products = $products;
+			
+			$fullcost = 0;
+			foreach($products as $product)
+			{
+				$product_discount = xarr($product, 'discount');
+				$product_cost_per_unit = xarr(xarr($product, 'cost_per_unit'), 'value');
+				if($product_discount != null and $product_discount != '')
+				{
+					$fullcost += ($product_cost_per_unit - (($product_cost_per_unit / 100) * $product_discount));
+				}
+				else
+				{
+					$fullcost += $product_cost_per_unit;
+				}
+			}
+			$obj->amount = array(
+				'currency' => 'KZT',
+				'value' => $fullcost,
+				'pay_type' => null,
+			);
+			$obj->amount_paid = array(
+				'currency' => 'KZT',
+				'value' => $fullcost,
+				'pay_type' => null,
+			);
+			$obj->update();
+			
+			$result->error_code = xarr($obj, 'error_code', EIO_FALSE);
+			$result->error_str = xarr($obj, 'error_str', '');
+			
+			__exit:
+			return $result;
+		}
+		
+		// удаление инвойса
+		public static function doDeleteConsultant($result, $params)
+		{
+			global $ioSession;
+			
+			$pkid = xarr($params, 'pkid');
+			
+			if($pkid == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Не указан pkid инвойса';
+				goto __exit;
+			}
+			
+			$r = IOCore::call(
+				'app.class.invoices.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+				)
+			);
+			$res = xarr($r, 'res', array());
+			$obj = array_shift($res);
+			if($obj == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Инвойс не найден';
+				goto __exit;
+			}
+			if(xarr($obj, 'company_pkid') != $ioSession->user->getCompanyID())
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Вы не можете удалить инвойс чужой компании';
+				goto __exit;
+			}
+			//if(xarr($obj, 'type') > 2)
+			if(!in_array(xarr($obj, 'status'), array(-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 101)))
+			{
+				$result->error_code = EIO_USER - 2;
+				if(xarr($obj, 'type') == 0)
+				{
+					$result->error_str = 'Вы не можете удалить продажу, так как заказ на доставке либо завершен';
+				}
+				elseif(xarr($obj, 'type') == 1)
+				{
+					$result->error_str = 'Вы не можете удалить инвойс, так как уже был осуществлен возврат';
+				}
+				elseif(xarr($obj, 'type') == 2)
+				{
+					$result->error_str = 'Вы не можете удалить заказ, так как заказ на доставке либо завершен';
+				}
+				goto __exit;
+			}
+			if(xarr($obj, 'isPayed', false))
+			{
+				$result->error_code = EIO_USER - 2;
+				$result->error_str = 'Вы не можете отменить инвойс, так как была внесена оплата';
+				goto __exit;
+			}
+			
+			// удаляем документы данного инвойса
+			dbSearchAll(array(
+				'entity' => 'app.class.invoicesDocuments.dbsearch2',
+				'filter' => array(
+					'invoice_pkid' => $pkid,
+				),
+				'out' => 'object',
+				'cursor' => false,
+				'callback' => function($cursor, $res, $count) use ($pkid)
+				{
+					foreach($res as $obj)
+					{
+						// удаляем файл с диска
+						if($obj->file) unlink('./files/data/invoices/documents/'.$pkid.'/'.$obj->file);
+						
+						$obj->delete();
+					}
+				}
+			));
+			
+			// удаление инвойса
+			$obj->delete();
+			
+			$result->error_code = xarr($obj, 'error_code', EIO_FALSE);
+			$result->error_str = xarr($obj, 'error_str', '');
+			
+			__exit:
+			return $result;
+		}
+		
+		// статистика продаж по указанному консультанту
+		public static function doGetConsultantStat($result, $params)
+		{
+			global $ioSession, $fullcount, $fullcost, $payedcount, $payedcost;
+			
+			$company_pkid = $ioSession->user->getCompanyID();
+			$consultant_login = xarr($params, 'consultant_login');
+			$date_ot = xarr($params, 'date_ot');
+			$date_do = xarr($params, 'date_do');
+			
+			// получение настроек компании
+			$rsettings = IOCore::call(
+				'app.class.settings.dbsearch2',
+				array(
+					'filter' => array(
+						'company_pkid' => $company_pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+					'out' => 'array',
+				)
+			);
+			$ressettings = xarr($rsettings, 'res', array());
+			$settings = array_shift($ressettings);
+			
+			$fullcount = 0;
+			$fullcost = 0;
+			$payedcount = 0;
+			$payedcost = 0;
+			
+			dbSearchAll(
+				array(
+					'entity' => 'app.class.invoices.dbsearch2',
+					'filter' => array(
+						'company_pkid' => $company_pkid,
+						'consultant_login' => $consultant_login,
+						'type' => array(0, 2), // 0: продажа, 1: возврат, 2: заказ
+						'<=ugmtimeAdd' => $date_do,
+						'>=ugmtimeAdd' => $date_ot,
+						'isDeleted' => false,
+					),
+					'order' => array(
+						'ugmtimeAdd' => 'asc',
+					),
+					'out' => 'array',
+					'cursor' => true,
+					'callback' => function($cursor, $res)
+					{
+						global $fullcount, $fullcost, $payedcount, $payedcost;
+						foreach($cursor as $obj)
+						{
+							$obj = mongoObjectToString($obj);
+							$fullcount++;
+							$fullcost += xarr(xarr($obj, 'amount', array()), 'value');
+							//if(xarr($obj, 'type', 0) > 2)
+							if(xarr($obj, 'status', 0) > 7 and xarr($obj, 'isPayed', false))
+							{
+								$payedcount++;
+								$payedcost += xarr(xarr($obj, 'amount', array()), 'value');
+							}
+						}
+					},
+				)
+			);
+			
+			$result->consultantPercent = xarr($settings, 'consultantPercent', 0);
+			$result->fullcount = $fullcount;
+			$result->fullcost = $fullcost;
+			$result->payedcount = $payedcount;
+			$result->payedcost = $payedcost;
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		// статистика продаж по указанному рефереру в указанной компании (старая функция)
+		/*public static function doGetRefererStat($result, $params)
+		{
+			global $fullcount, $fullcost, $payedcount, $payedcost;
+			
+			$company_pkid = xarr($params, 'company_pkid');
+			$referer_login = xarr($params, 'referer_login');
+			$date_ot = xarr($params, 'date_ot');
+			$date_do = xarr($params, 'date_do');
+			
+			// получение настроек компании
+			$rsettings = IOCore::call(
+				'app.class.settings.dbsearch2',
+				array(
+					'filter' => array(
+						'company_pkid' => $company_pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+					'out' => 'array',
+				)
+			);
+			$ressettings = xarr($rsettings, 'res', array());
+			$settings = array_shift($ressettings);
+			
+			$fullcount = 0;
+			$fullcost = 0;
+			$payedcount = 0;
+			$payedcost = 0;
+			
+			dbSearchAll(
+				array(
+					'entity' => 'app.class.invoices.dbsearch2',
+					'filter' => array(
+						'company_pkid' => $company_pkid,
+						'referer_login' => $referer_login,
+						'type' => array(0, 2), // 0: продажа, 1: возврат, 2: заказ
+						'>=ugmtimeAdd' => $date_ot,
+						'<=ugmtimeAdd' => $date_do,
+						'isDeleted' => false,
+					),
+					'order' => array(
+						'ugmtimeAdd' => 'asc',
+					),
+					'out' => 'array',
+					'cursor' => true,
+					'callback' => function($cursor, $res)
+					{
+						global $fullcount, $fullcost, $payedcount, $payedcost;
+						foreach($cursor as $obj)
+						{
+							$obj = mongoObjectToString($obj);
+							$fullcount++;
+							$fullcost += xarr(xarr($obj, 'amount', array()), 'value');
+							//if(xarr($obj, 'type', 0) > 2)
+							if(xarr($obj, 'status', 0) > 7 and xarr($obj, 'isPayed', false))
+							{
+								$payedcount++;
+								$payedcost += xarr(xarr($obj, 'amount', array()), 'value');
+							}
+						}
+					},
+				)
+			);
+			
+			$result->refererPercent = xarr($settings, 'partnersprogramPercent', 0);
+			$result->fullcount = $fullcount;
+			$result->fullcost = $fullcost;
+			$result->payedcount = $payedcount;
+			$result->payedcost = $payedcost;
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}*/
+		
+		public static function doGetData2($result, $params)
+		{
+			$result->res = null;
+			$result->cursor = null;
+			
+			$p = call_user_func_array(array(get_called_class(), 'params'), array($params));
+			$class = xarr($p, 'class', '');
+			
+			$order = xarr($params, 'order', array(
+				'ugmtimeAdd' => 'desc',
+			));
+			$filter = xarr($params, 'filter');
+			$start = intval(xarr($params, 'start', xarr($p, 'start', 0)));
+			$limit = intval(xarr($params, 'limit', xarr($p, 'limit', self::$__defaultLimit)));
+			$curout = xarr($params, 'cursor', 0);
+			if($limit <= 0 or $limit > self::$__maxLimit)
+			{
+				$limit = self::$__maxLimit;
+			}
+			
+			$res = IOCore::call(
+				$class.'.dbsearch2',
+				array(
+					'out' => 'array',
+					'filter' => $filter,
+					'limit' => $limit,
+					'start' => $start,
+					'order' => $order,
+					'cursor' => $curout,
+					//'explain' => 1,
+				),
+				null,
+				array(
+					'params' => $params,
+				)
+			);
+			
+			if($curout == 0)
+			{
+				$result->res = xarr($res, 'res', array());
+			}
+			else
+			{
+				$result->cursor = xarr($res, 'cursor');
+			}
+			
+			$result->limit = $limit;
+			$result->start = $start;
+			$result->filter = $filter;
+			$result->order = $order;
+			$result->count = xarr($res, 'count', 0);
+			$result->error_code = xarr($res, 'error_code');
+			$result->error_str = xarr($res, 'error_str');
+			$result->db_time = xarr($res, 'time');
+			$result->explain = xarr($res, 'explain');
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		public static function doGetData2More($result, $params)
+		{
+			global $ioEnum;
+			
+			$getPayments = xarr($params, 'getPayments', false); // получать историю платежей к инвойсам?
+			$getDocuments = xarr($params, 'getDocuments', false); // получать документы инвойсов?
+			
+			$result = self::doGetData2($result, $params);
+			
+			$data = xarr($result, 'res', array());
+			unset($result->res);
+			
+			// собираем pkid цветов и размеров, предложений, методов доставки, точек самовывоза
+			$offers_numbers = array();
+			$colors_pkids = array();
+			$sizes_pkids = array();
+			$sizetypes_pkids = array();
+			$delivery_methods = array();
+			$delivery_warehouses_pkids = array();
+			foreach($data as $item)
+			{
+				$products = xarr($item, 'products', array());
+				foreach($products as $product)
+				{
+					$color_pkid = xarr($product, 'color_pkid');
+					if($color_pkid != null
+					and $color_pkid != 0
+					and !in_array($color_pkid, $colors_pkids))
+					{
+						$colors_pkids[] = $color_pkid;
+					}
+					
+					$size_pkid = xarr($product, 'size_pkid');
+					if($size_pkid != null
+					and $size_pkid != 0
+					and !in_array($size_pkid, $sizes_pkids))
+					{
+						$sizes_pkids[] = $size_pkid;
+					}
+					
+					$offer_number = xarr($product, 'offer_number');
+					if($offer_number != null and !in_array($offer_number, $offers_numbers))
+					{
+						$offers_numbers[] = $offer_number;
+					}
+				}
+				
+				$warehouse_pkid = xarr($item, 'warehouse_pkid');
+				if($warehouse_pkid != null and !in_array($warehouse_pkid, $delivery_warehouses_pkids))
+				{
+					$delivery_warehouses_pkids[] = $warehouse_pkid;
+				}
+				
+				$delivery_method = xarr($item, 'delivery_method');
+				if($delivery_method != null and !in_array($delivery_method, $delivery_methods))
+				{
+					$delivery_methods[] = $delivery_method;
+				}
+			}
+			
+			// получение цветов
+			$rcolors = IOCore::call(
+				'app.class.colors.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $colors_pkids,
+						'isDeleted' => false,
+					),
+					'limit' => count($colors_pkids),
+					'out' => 'array',
+				)
+			);
+			$rescolors = xarr($rcolors, 'res', array());
+			$colors = array();
+			foreach($rescolors as $color)
+			{
+				$color_pkid = xarr($color, 'pkid');
+				$colors[$color_pkid] = $color;
+			}
+			unset($rescolors);
+			
+			// получение размеров
+			$rsizes = IOCore::call(
+				'app.class.sizes.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $sizes_pkids,
+						'isDeleted' => false,
+					),
+					'limit' => count($sizes_pkids),
+					'out' => 'array',
+				)
+			);
+			$ressizes = xarr($rsizes, 'res', array());
+			$sizes = array();
+			foreach($ressizes as $size)
+			{
+				$size_pkid = xarr($size, 'pkid');
+				$sizes[$size_pkid] = $size;
+				
+				$size_type_pkid = xarr($size, 'size_type');
+				if($size_type_pkid != null)
+				{
+					if(!in_array($size_type_pkid, $sizetypes_pkids))
+					{
+						$sizetypes_pkids[] = $size_type_pkid;
+					}
+				}
+			}
+			unset($ressizes);
+			
+			// получение размерных рядов
+			$rsizetypes = IOCore::call(
+				'app.class.sizesTypes.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $sizetypes_pkids,
+						'isDeleted' => false,
+					),
+					'limit' => count($sizetypes_pkids),
+					'out' => 'array',
+				)
+			);
+			$ressizetypes = xarr($rsizetypes, 'res', array());
+			$sizetypes = array();
+			foreach($ressizetypes as $sizetype)
+			{
+				$sizetype_pkid = xarr($sizetype, 'pkid');
+				$sizetypes[$sizetype_pkid] = $sizetype;
+			}
+			foreach($sizes as &$size)
+			{
+				$sizetype_pkid = xarr($size, 'size_type');
+				if($sizetype_pkid != null)
+				{
+					$sizetype = xarr($sizetypes, $sizetype_pkid, array());
+					$size['size_type_name_kz'] = xarrj($sizetype, 'name_kz', 'Без размерного ряда');
+					$size['size_type_name_ru'] = xarrj($sizetype, 'name_ru', 'Без размерного ряда');
+					$size['size_type_name_en'] = xarrj($sizetype, 'name_en', 'Without size type');
+				}
+			}
+			
+			// получаем методы доставки
+			$rdeliverymethods = IOCore::call(
+				'app.class.deliveryMethods.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $delivery_methods,
+					),
+					'limit' => count($delivery_methods),
+					'out' => 'array',
+				)
+			);
+			$resdeliverymethods = xarr($rdeliverymethods, 'res', array());
+			$deliverymethods = array();
+			foreach($resdeliverymethods as $deliverymethod)
+			{
+				$deliverymethod_pkid = xarr($deliverymethod, 'pkid');
+				$deliverymethods[$deliverymethod_pkid] = $deliverymethod;
+			}
+			
+			// получение точек выдачи товаров
+			$rwarehouses = IOCore::call(
+				'app.class.warehouses.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $delivery_warehouses_pkids,
+						'isDeleted' => false,
+					),
+					'limit' => count($delivery_warehouses_pkids),
+					'out' => 'array',
+				)
+			);
+			$reswarehouses = xarr($rwarehouses, 'res', array());
+			$warehouses = array();
+			foreach($reswarehouses as $warehouse)
+			{
+				$warehouse_pkid = xarr($warehouse, 'pkid');
+				$warehouse_name = xarr($warehouse, 'name', '');
+				$warehouse_location = xarrj($warehouse, 'location_address');
+				$warehouses[$warehouse_pkid] = $warehouse_name.($warehouse_location ? ' ('.$warehouse_location.')' : '');
+			}
+			
+			// получаем предложения
+			$roffers = IOCore::call(
+				'app.class.offersMany.dbsearch2',
+				array(
+					'filter' => array(
+						'offer_number' => $offers_numbers,
+						'isDeleted' => false,
+					),
+					'limit' => count($offers_numbers),
+					'out' => 'array',
+				)
+			);
+			$resoffers = xarr($roffers, 'res', array());
+			$offers = array();
+			foreach($resoffers as $offer)
+			{
+				$offer_number = xarr($offer, 'offer_number');
+				$offers[$offer_number] = $offer;
+			}
+			
+			// применение цветов, размеров, торговых точек к данным
+			foreach($data as &$item)
+			{
+				$invoice_pkid = xarr($item, 'pkid');
+				$products = xarr($item, 'products', array());
+				foreach($products as &$product)
+				{
+					$color_pkid = xarr($product, 'color_pkid');
+					$product['color_name_kz'] = xarr(xarr($colors, $color_pkid, array()), 'name_kz', 'Без цвета');
+					$product['color_name_ru'] = xarr(xarr($colors, $color_pkid, array()), 'name_ru', 'Без цвета');
+					$product['color_name_en'] = xarr(xarr($colors, $color_pkid, array()), 'name_en', 'Без цвета');
+					
+					$size_pkid = xarr($product, 'size_pkid');
+					$product['size_name'] = xarr(xarr($sizes, $size_pkid, array()), 'name', 'Без размера');
+					$product['size_type'] = xarr(xarr($sizes, $size_pkid, array()), 'size_type', 0);
+					$product['size_type_name_kz'] = xarr(xarr($sizes, $size_pkid, array()), 'size_type_name_kz', 'Без размерного ряда');
+					$product['size_type_name_ru'] = xarr(xarr($sizes, $size_pkid, array()), 'size_type_name_ru', 'Без размерного ряда');
+					$product['size_type_name_en'] = xarr(xarr($sizes, $size_pkid, array()), 'size_type_name_en', 'Без размерного ряда');
+					
+					$gender_pkid = xarr($product, 'gender_pkid');
+					$product['gender_name'] = xarr(xarr($ioEnum, 'genders', array()), $gender_pkid, 'Без пола');
+					
+					$offer_number = xarr($product, 'offer_number');
+					$product['offer'] = xarr($offers, $offer_number, array());
+				}
+				$item['products'] = $products;
+				$item['delivery_method_info'] = xarr($deliverymethods, xarr($item, 'delivery_method'));
+				$item['warehouse_name'] = xarr($warehouses, xarr($item, 'warehouse_pkid'), '');
+				
+				if($getPayments)
+				{
+					$rpayments = IOCore::call(
+						'app.class.invoicesPayments.dbsearch2',
+						array(
+							'filter' => array(
+								'invoice_pkid' => $invoice_pkid,
+								'isDeleted' => false,
+							),
+							'limit' => 1000,
+							'out' => 'array',
+						)
+					);
+					$payments = xarr($rpayments, 'res', array());
+					unset($rpayments);
+					
+					$moneypackets_pkid = array();
+					foreach($payments as $payment1)
+					{
+						$moneypacket_pkid = xarr($payment1, 'moneyPacket_pkid');
+						if(!in_array($moneypacket_pkid, $moneypackets_pkid))
+						{
+							$moneypackets_pkid[] = $moneypacket_pkid;
+						}
+					}
+					$moneypackets_groups_pkid = array();
+					$moneypackets = array();
+					if(count($moneypackets_pkid) > 0)
+					{
+						// получение счетов
+						$rmoneypackets = IOCore::call(
+							'upi.class.moneyPackets.dbsearch2',
+							array(
+								'filter' => array(
+									'pkid' => $moneypackets_pkid,
+								),
+								'limit' => count($moneypackets_pkid),
+								'out' => 'array',
+							)
+						);
+						$t_moneypackets = xarr($rmoneypackets, 'res', array());
+						foreach($t_moneypackets as $packet)
+						{
+							$packet_pkid = xarr($packet, 'pkid');
+							$moneypackets[$packet_pkid] = $packet;
+							
+							$packet_group_pkid = xarr($packet, 'group_pkid');
+							if(!in_array($packet_group_pkid, $moneypackets_groups_pkid))
+							{
+								$moneypackets_groups_pkid[] = $packet_group_pkid;
+							}
+						}
+						unset($t_moneypackets);
+					}
+					$moneypackets_groups = array();
+					if(count($moneypackets_groups_pkid) > 0)
+					{
+						// получение групп счетов
+						$rmoneypackets_groups = IOCore::call(
+							'upi.class.moneyPacketsGroups.dbsearch2',
+							array(
+								'filter' => array(
+									'pkid' => $moneypackets_groups_pkid,
+								),
+								'limit' => count($moneypackets_groups_pkid),
+								'out' => 'array',
+							)
+						);
+						$t_moneypackets_groups = xarr($rmoneypackets_groups, 'res', array());
+						foreach($t_moneypackets_groups as $packetgroup)
+						{
+							$packetgroup_pkid = xarr($packetgroup, 'pkid');
+							$moneypackets_groups[$packetgroup_pkid] = $packetgroup;
+						}
+						unset($t_moneypackets_groups);
+					}
+					foreach($payments as &$payment)
+					{
+						$payment_moneypacket_pkid = xarr($payment, 'moneyPacket_pkid');
+						$payment_moneypacket = xarr($moneypackets, $payment_moneypacket_pkid);
+						$payment['moneyPacket'] = $payment_moneypacket;
+						$payment_moneypacket_group_pkid = xarr($payment_moneypacket, 'group_pkid');
+						$payment_moneypacket_group = xarr($moneypackets_groups, $payment_moneypacket_group_pkid);
+						$payment['moneyPacket_group'] = $payment_moneypacket_group;
+					}
+					$item['payments'] = $payments;
+					unset($payments);
+					unset($moneypackets);
+					unset($moneypackets_groups);
+				}
+				
+				if($getDocuments)
+				{
+					$rdocuments = IOCore::call(
+						'app.class.invoicesDocuments.dbsearch2',
+						array(
+							'filter' => array(
+								'invoice_pkid' => $invoice_pkid,
+								'isDeleted' => false,
+							),
+							'limit' => 1000,
+							'out' => 'array',
+						)
+					);
+					$documents = xarr($rdocuments, 'res', array());
+					unset($rdocuments);
+					$item['documents'] = $documents;
+					unset($documents);
+				}
+			}
+			
+			$result->data = $data;
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		public static function doGetData3($result, $params)
+		{
+			global $ioSession;
+			
+			$result = parent::doGetData($result, $params);
+			
+			/*$filter = xarr($params, 'filter', array());
+			$filter_type = xarr($filter, 'type');
+			$limit = xarr($params, 'limit', 1000);
+			$start = xarr($params, 'start', 0);
+			$company_pkid = xarr($params, 'company_pkid', $ioSession->user->getCompanyID());
+			
+			$filter = array(
+				'company_pkid' => $company_pkid,
+				'isDeleted' => false,
+			);
+			if($filter_type)
+			{
+				$filter['$or'] = array(
+					array(
+						'type' => 3,
+					),
+					array(
+						'type' => array(
+							5, 6,
+						),
+						'picker_pkid' => $ioSession->user->id,
+					),
+				);
+			}
+			else
+			{
+				$filter[] = array(
+					'type' => $filter_type,
+				);
+			}
+			$result->filter = $filter;
+			$r = IOCore::call(
+				'app.class.invoices.dbsearch2',
+				array(
+					'filter' => $filter,
+					'order' => array(
+						'type' => 'desc',
+						'ugmtimeAdd' => 'asc',
+					),
+					'limit' => $limit,
+					'start' => $start,
+					'out' => 'array',
+				)
+			);
+			$data = xarr($r, 'res', array());
+			$count = xarr($r, 'count', 0);*/
+			
+			$data = $result->data;
+			$tids = array();
+			$user_logins = array();
+			foreach($data as $el)
+			{
+				$client_pkid = xarr($el, 'client_pkid');
+				if(strpos($client_pkid, 'user_') === 0)
+				{
+					$user_logins[] = substr($client_pkid, 5);
+				}
+				
+				$products = xarr($el, 'products', array());
+				foreach($products as $prod)
+				{
+					$product_tid = xarr($prod, 'tid');
+					if($product_tid != null and !in_array($product_tid, $tids))
+					{
+						$tids[] = $product_tid;
+					}
+				}
+			}
+			$r = IOCore::call(
+				'app.class.goods.dbsearch2',
+				array(
+					'filter' => array(
+						'tid' => $tids,
+					),
+					'limit' => count($tids),
+					'out' => 'array',
+				)
+			);
+			$res = xarr($r, 'res', array());
+			unset($r);
+			$goods = array();
+			foreach($res as $el)
+			{
+				$tid = xarr($el, 'tid');
+				$goods[$tid] = $el;
+			}
+			unset($res);
+			
+			foreach($data as &$el)
+			{
+				$products = xarr($el, 'products', array());
+				foreach($products as &$prod)
+				{
+					$product_tid = xarr($prod, 'tid');
+					$prod = array_merge($prod, $goods[$product_tid]);
+				}
+				$el['products'] = $products;
+			}
+			
+			if(count($user_logins) > 0)
+			{
+				$invoices_users = IOCore::call(
+					'com.class.user.findByLogin',
+					array(
+						'login' => $user_logins,
+						'limit' => 1000,
+					)
+				);
+				foreach($data as &$el)
+				{
+					$client_pkid = xarr($el, 'client_pkid');
+					if(strpos($client_pkid, 'user_') === 0)
+					{
+						$client_login = substr($client_pkid, 5);
+						$el['userinfo'] = xarr($invoices_users, $client_login, array());
+					}
+				}
+			}
+			
+			$result->data = $data;
+			//$result->count = $count;
+			$result->time = time();
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		// создание инвойсов по выбранным товарам в корзине (old!!! имеет ошибки!!! не использовать!!!)
+		public static function doAddFromBasket($result, $params)
+		{
+			global $ioSession, $ioProjects, $ioHash;
+			
+			$offerBasket_pkids = xarr($params, 'pkids', array());
+			$resob = xarr($params, 'offersBasket', array());
+			
+			$payment_method = xarr($params, 'payment_method', 0);
+			$comment = xarr($params, 'comment');
+			
+			$invoices_pkids = array();
+			
+			$user_login = $ioSession->user->login;
+			$user_id = $ioSession->user->id;
+			$user_tel = xarr($ioSession->user->info, 'tel');
+			$user_email = xarr($ioSession->user->info, 'email');
+			$user_reg = false;
+			
+			if((gettype($offerBasket_pkids) == 'array' and count($offerBasket_pkids) > 0)
+			or (gettype($resob) == 'array' and count($resob) > 0))
+			{
+				if($ioSession->user->isGuest())
+				{
+					$user_reg = true;
+					
+					$captcha = xarr($params, 'captcha', '');
+					
+					if($captcha != $ioHash->get('captcha_keystring.'.$ioSession->session))
+					{
+						$result->error_code = EIO_USER - 20;
+						$result->error_str = 'Неверно указан код с картинки';
+						goto __exit;
+					}
+					
+					$user_sname = xarr($params, 'user_sname');
+					$user_fname = xarr($params, 'user_fname');
+					$user_tel = xarr($params, 'user_tel');
+					$user_email = xarr($params, 'user_email');
+					
+					if($user_sname == null or $user_sname == '')
+					{
+						$result->error_code = EIO_USER - 1;
+						$result->error_str = 'Не указана фамилия';
+						goto __exit;
+					}
+					if($user_fname == null or $user_fname == '')
+					{
+						$result->error_code = EIO_USER - 2;
+						$result->error_str = 'Не указано имя';
+						goto __exit;
+					}
+					if($user_tel == null or $user_tel == '')
+					{
+						$result->error_code = EIO_USER - 4;
+						$result->error_str = 'Не указано номер телефона';
+						goto __exit;
+					}
+					if($user_email == null or $user_email == '')
+					{
+						$result->error_code = EIO_USER - 3;
+						$result->error_str = 'Не указано email';
+						goto __exit;
+					}
+					
+					$user_tel = preg_replace("/\D/", '', $user_tel); //"/[^\d;]/g" ??? maybe
+					$user_tel = substr_replace($user_tel, 7, 0, 1);
+					
+					$user_login = strtolower(str_replace(' ', '', translit($user_sname).'.'.translit($user_fname)));
+					$suser = IOCore::call(
+						'com.class.user.findByLogin',
+						array(
+							'login' => $user_login,
+						)
+					);
+					$suser = xarr($suser, $user_login);
+					$cnt_user_login_postfix = 0;
+					$user_login_t = $user_login;
+					while($suser != null)
+					{
+						$cnt_user_login_postfix++;
+						$user_login = $user_login.'_'.$cnt_user_login_postfix;
+						$suser = IOCore::call(
+							'com.class.user.findByLogin',
+							array(
+								'login' => $user_login,
+							)
+						);
+						$suser = xarr($suser, $user_login);
+					}
+					
+					// регистрация пользователя
+					$r = IOCore::callAction(
+						'com.model.user.regUserForProfile',
+						array(
+							'sname' => $user_sname,
+							'fname' => $user_fname,
+							'email' => $user_email,
+							'tel' => $user_tel,
+							'login' => $user_login,
+						)
+					);
+					if(xarr($r, 'error_code', EIO_FALSE) != EIO_OK)
+					{
+						$result->error_code = xarr($r, 'error_code', EIO_FALSE);
+						$result->error_str = xarr($r, 'error_str', '');
+						goto __exit;
+					}
+					$result->jwt_string = xarr($r, 'jwt_string', '0');
+					
+					$user_login = xarr($r, 'user_login', $user_login);
+					$user_id = xarr($r, 'user_id');
+					$user_tel = $user_tel;
+				}
+				if(gettype($offerBasket_pkids) == 'array' and count($offerBasket_pkids) > 0)
+				{
+					// получение элементов корзины
+					$rob = IOCore::call(
+						'app.class.offersBasket.dbsearch2',
+						array(
+							'filter' => array(
+								'user_pkid' => $user_id,
+								'pkid' => $offerBasket_pkids,
+								'isDeleted' => false,
+							),
+							'limit' => count($offerBasket_pkids),
+							'out' => 'array',
+						)
+					);
+					$resob = xarr($rob, 'res', array());
+				}
+				
+				if($comment) $comment .= "\n\n";
+				$comment .= 'Клиент:'."\n";
+				$comment .= 'ФИО: '.$user_sname.' '.$user_fname.' '.$user_lname."\n";
+				$comment .= 'Логин: '.$user_login."\n";
+				$comment .= 'Тел: '.$user_tel."\n";
+				$comment .= 'Email: '.$user_email;
+				
+				// собираем pkid'ы предложений
+				$offers_numbers = array();
+				foreach($resob as $el)
+				{
+					$offer_number = xarr($el, 'offer_number');
+					$offers_numbers[] = $offer_number;
+				}
+				
+				// получаем предложения
+				$roffers = IOCore::call(
+					'app.class.offersMany.dbsearch2',
+					array(
+						'filter' => array(
+							'offer_number' => $offers_numbers,
+							'isDeleted' => false,
+						),
+						'limit' => count($offers_numbers),
+						'out' => 'array',
+					)
+				);
+				$resoffers = xarr($roffers, 'res', array());
+				$companies = array();
+				
+				$offers = array();
+				foreach($resob as $ob)
+				{
+					$offer_number = xarr($ob, 'offer_number');
+					$company_pkid = xarr($ob, 'company_pkid');
+					
+					$offer = array();
+					foreach($resoffers as $offeritem)
+					{
+						$offeritem_offer_number = xarr($offeritem, 'offer_number');
+						if($offeritem_offer_number == $offer_number)
+						{
+							$offer = $offeritem;
+							$offer['tmp_pkid'] = xarr($ob, 'tmp_pkid');
+							$offer['offerbasket_pkid'] = xarr($ob, 'pkid');
+							$offer['count'] = xarr($ob, 'count', 1);
+							$offer['color_pkid'] = xarr($ob, 'color_pkid');
+							$offer['size_pkid'] = xarr($ob, 'size_pkid');
+							$offer['gender_pkid'] = xarr($ob, 'gender_pkid');
+							$offer['delivery_method'] = xarr($ob, 'delivery_method');
+							$offer['delivery_warehouse_pkid'] = xarr($ob, 'delivery_warehouse_pkid');
+							break;
+						}
+					}
+					if($offer)
+					{
+						$offer_parameters = xarr($offer, 'offer_parameters', array());
+						$offer['offer_sel_parameter'] = array();
+						foreach($offer_parameters as $offer_parameter)
+						{
+							$offer_parameter_color_pkid = xarr($offer_parameter, 'color_pkid');
+							$offer_parameter_size_pkid = xarr($offer_parameter, 'size_pkid');
+							$offer_parameter_gender_pkid = xarr($offer_parameter, 'gender_pkid');
+							if($offer_parameter_color_pkid == xarr($offer, 'color_pkid')
+							and $offer_parameter_size_pkid == xarr($offer, 'size_pkid')
+							and $offer_parameter_gender_pkid == xarr($offer, 'gender_pkid'))
+							{
+								$offer_parameter_count = xarr($offer_parameter, 'count', 0);
+								if($offer_parameter_count > 0)
+								{
+									$offer['offer_sel_parameter'] = $offer_parameter;
+								}
+								break;
+							}
+						}
+						
+						$offers[$company_pkid][] = $offer;
+						if(!in_array($company_pkid, $companies))
+						{
+							$companies[] = $company_pkid;
+						}
+					}
+				}
+				
+				// сортировка инвойсов по компаниям
+				foreach($companies as $company_pkid)
+				{
+					$company_warehouses_pkids = array();
+					$company_warehouses_offers = array();
+					
+					$company_offers = xarr($offers, $company_pkid, array());
+					foreach($company_offers as $offer)
+					{
+						$warehouse_pkid = xarr($offer, 'delivery_warehouse_pkid');
+						$company_warehouses_offers[$warehouse_pkid][] = $offer;
+						
+						if($warehouse_pkid != null and !in_array($warehouse_pkid, $company_warehouses_pkids))
+						$company_warehouses_pkids[] = $warehouse_pkid;
+					}
+					foreach($company_warehouses_pkids as $warehouse_pkid)
+					{
+						$amount = 0;
+						$amount_delivery = 0;
+						$products = array();
+						
+						$company_warehouse_offers = xarr($company_warehouses_offers, $warehouse_pkid, array());
+						foreach($company_warehouse_offers as $offer)
+						{
+							$offer_count = intval(xarr($offer, 'count', 1));
+							$offer_discount = intval(xarr($offer, 'offer_discount', 0));
+							$offer_site_discount = intval(xarr($offer, 'offer_site_discount', 0));
+							$offer_amount_first = xarrj($offer, 'offer_sel_parameter.cost_per_unit');
+							$offer_amount = floatval(xarr($offer_amount_first, 'value', 0));
+							$offer_discount2 = 0;
+							if($offer_discount > 0 or $offer_site_discount > 0)
+							{
+								if($offer_discount > $offer_site_discount)
+								{
+									$offer_discount2 = $offer_discount;
+									$offer_amount -= ($offer_amount / 100) * $offer_discount;
+									$offer_amount_first['value'] = $offer_amount;
+								}
+								else
+								{
+									$offer_discount2 = $offer_site_discount;
+									$offer_amount -= ($offer_amount / 100) * $offer_site_discount;
+									$offer_amount_first['value'] = $offer_amount;
+								}
+							}
+							$offer_amount *= $offer_count;
+							$amount += $offer_amount;
+							
+							for($i = 0; $i < $offer_count; $i++)
+							{
+								$products[] = array(
+									'tid' => xarr($offer, 'tid'), // акцептованнный ИНТ товара
+									'offer_name' => xarr($offer, 'offer_name', xarrj($offer, 'goods_name.ru', '')),
+									'offer_number' => $offer_number,
+									'size_pkid' => xarr($offer, 'size_pkid'),
+									'color_pkid' => xarr($offer, 'color_pkid'),
+									'gender_pkid' => xarr($offer, 'gender_pkid'),
+									'amount' => $offer_amount_first, // цена за единицу
+									
+									'discount' => $offer_discount2, // скидка в процентах
+									'isSaleWithoutQr' => xarr($offer, 'isSaleWithoutQr'), // разрешена ли продажа без QR кодов?
+									'isDelivered' => false, // был ли получен товар клиентом?
+									'isDeleted' => false, // был ли возврат товара?
+									
+									// если не null то товары были акцептованы
+									'qr_code_creator_number' => null, // создатель QR кода (номер)
+									'qr_code_serial_number' => null, // серийный номер продукта
+									'qr_code_type' => null, // серийный номер продукта
+									
+									// значения устанавливаются в момент продажи
+									//'qr_code_count_si' => 1, // количество товара в СИ
+									//'qr_code_si' => 1, // ед. измерения
+								);
+							}
+						}
+						
+						$c = IOCore::Instance('app.class.invoices');
+						$c->assign_arr(
+							array(
+								'company_pkid' => $company_pkid,
+								'client_phone' => $user_tel,
+								'creator_pkid' => $user_id,
+								'creator_login' => $user_login,
+								'warehouse_pkid' => $warehouse_pkid,
+								'products' => $products,
+								
+								// клиент user_<login> - логин пользователя; company_<pkid> - pkid компании; crm_<pkid> - pkid записи из CRM; text_<ФИО> - незарегистрированный пользователь;
+								'client_pkid' => 'user_'.$user_login,
+								
+								// тип инвойса (ioEnum.invoices_types)
+								'type' => 0, // продажа
+								
+								// статус инвойса
+								'status' => 0, // 0: cоздан,
+								
+								// массив из акцептованных ИНТ товаров
+								'products_tids' => array(),
+								
+								// количество продуктов
+								'products_count' => count($products),
+								
+								// общая сумма товаров, которая вычисляется по предложениям
+								'amount' => array(
+									'value' => $amount,
+									'currency' => 'KZT',
+									'pay_type' => 0,
+								),
+								
+								// информация о доставке
+								'delivery_info' => $comment,
+								
+								// стоимость доставки
+								'amount_delivery' => array(
+									'value' => $amount_delivery,
+									'currency' => 'KZT',
+									'pay_type' => 0,
+								),
+								
+								// сумма за которую были куплены товары
+								'amount_paid' => array(
+									'value' => 0,
+									'currency' =>  'KZT',
+									'pay_type' => 0,
+								),
+								// сумма наличных
+								'amount_cash' => array(
+									'value' => 0,
+									'currency' => 'KZT',
+									'pay_type' => 0,
+								),
+								// сумма скидки
+								'discount' => array(
+									'value' => 0,
+									'currency' => 'KZT',
+									'pay_type' => 0,
+								),
+								// сумма аванса
+								/*'prepayment' => array(
+									'value' => 0,
+									'currency' => 'KZT',
+									'pay_type' => 0,
+								),*/
+								
+								// дата продажи
+								//'dateSale' => iogetdbtimeutc_rfc822(time()),
+							)
+						);
+						$c->create();
+						$invoices_pkids[] = xarr($c, 'pkid');
+						if(xarr($c, 'error_code', EIO_FALSE) != EIO_OK)
+						{
+							$result->error_code = xarr($c, 'error_code', EIO_FALSE);
+							$result->error_str = xarr($c, 'error_str', '');
+							goto __exit;
+						}
+						
+						// уведомление сотрудников по телеграму
+						$rnusers = IOCore::call(
+							'app.class.noticeUsers.dbsearch2',
+							array(
+								'filter' => array(
+									'company_pkid' => $company_pkid,
+									'isDeleted' => false,
+								),
+								'limit' => 1000,
+								'out' => 'array',
+							)
+						);
+						$nusers = xarr($rnusers, 'res', array());
+						$nusers_user_pkid = array();
+						foreach($nusers as $nuser)
+						{
+							if(!in_array(xarr($nuser, 'user_pkid'), $nusers_user_pkid))
+							{
+								$nusers_user_pkid[] = xarr($nuser, 'user_pkid');
+							}
+							$sendTelegram = IOCore::callAction(
+								'telegram.model.kdtappbot.sendTextByID',
+								array(
+									'id' => xarr($nuser, 'user_pkid'),
+									'message' => array(
+										'Уважаемый сотрудник отдела продаж BMC Trade!'."\n\n".
+										'Поступил новый интернет-заказ № "'.xarr($c, 'invoice_number', '???').'".'."\n".
+										'Просьба, обработать заказ как можно скорее.'."\n".
+										'https:'.xarr($ioProjects, 'trade').'/cabinet/invoices'."\n\n".
+										'Спасибо.',
+									),
+								)
+							);
+						}
+						$sendNotice = IOCore::callAction(
+							'com.notice.model.notices.add',
+							array(
+								'service' => 'trade',
+								'module_name' => 'bmc.trade2.model.invoices',
+								'method' => 'actionAddFromBasket',
+								'type' => 0, // тип уведомления (0: по умолчанию, 1: информация, 2: предупреждение, 3: ошибка)
+								'cat' => 0, // 0=bell, 1=billhorn, 2=coin1, 3=coin2, 4=webinar, 5=webinar2
+								'link' => 'http:'.xarr($ioProjects, 'trade').'/cabinet/invoices',
+								'title' => 'Поступил интернет-заказ',
+								'message_lk' => 'Поступил новый интернет-заказ № "'.xarr($c, 'invoice_number', '???').'". Просьба, обработать заказ как можно скорее.',
+								'message_email' => 'Поступил новый интернет-заказ № "'.xarr($c, 'invoice_number', '???').'".<br/>Просьба, обработать заказ как можно скорее.',
+								//'message_sms' => '',
+								'sendMethods' => array(1), // дополнительные методы отправки уведомления (1=email, 2=sms)
+								//'rules' => 'org.eopkz.webinars.accept',
+								//'sender' => $ioSession->user->id,
+								'users_pkid' => $nusers_user_pkid,
+								//'company_pkid' => $ioSession->user->getCompanyID(),
+								'gmtimeEvent' => iogetdbtimeutc_rfc822(time()),
+								'gmtimeShow' => iogetdbtimeutc_rfc822(time()),
+							)
+						);
+					}
+				}
+				foreach($resob as $ob)
+				{
+					$offer_number = xarr($ob, 'offer_number');
+					$company_pkid = xarr($ob, 'company_pkid');
+					
+					// увеличиваем количество заказов (покупок) предложений
+					$roffer = IOCore::call(
+						'app.class.offers.dbsearch2',
+						array(
+							'filter' => array(
+								'company_pkid' => $company_pkid,
+								'offer_number' => $offer_number,
+								'isDeleted' => false,
+							),
+							'limit' => 1,
+						)
+					);
+					$resoffer = xarr($roffer, 'res', array());
+					$offerobj = array_shift($resoffer);
+					if($offerobj != null)
+					{
+						$offerobj->orders++;
+						$offerobj->update();
+					}
+				}
+				if(!$user_reg)
+				{
+					// удаление заказанных товаров из корзины
+					$rob = IOCore::call(
+						'app.class.offersBasket.dbsearch2',
+						array(
+							'filter' => array(
+								'user_pkid' => $user_id,
+								'pkid' => $offerBasket_pkids,
+								'isDeleted' => false,
+							),
+							'limit' => count($offerBasket_pkids),
+						)
+					);
+					$resob = xarr($rob, 'res', array());
+					foreach($resob as $obj)
+					{
+						$obj->delete();
+						
+						if(xarr($obj, 'error_code', EIO_FALSE) != EIO_OK)
+						{
+							$result->error_code = xarr($obj, 'error_code', EIO_FALSE);
+							$result->error_str = xarr($obj, 'error_str', '');
+							goto __exit;
+						}
+					}
+				}
+			}
+			
+			$result->pkids = $invoices_pkids;
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		// создание инвойса покупателем при оформлении покупки через корзину (old!!! имеет ошибки!!! не использовать!!!)
+		public static function doAddBuyer($result, $params)
+		{
+			global $ioSession, $ioProjects;
+			
+			$client_tel = xarr($params, 'tel');
+			if($client_tel == null or $client_tel == '')
+			{
+				$client_tel = xarr($ioSession->user->info, 'tel');
+			}
+			$company_pkid = xarr($params, 'company_pkid', 65);
+			$t_products = xarr($params, 'products', array());
+			$amount_delivery = xarr($params, 'amount_delivery', 0);
+			$delivery_info = xarr($params, 'delivery_info');
+			
+			if($company_pkid == null or $company_pkid == '')
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Не указан pkid компании';
+				goto __exit;
+			}
+			
+			$amount = 0;
+			$products = array();
+			foreach($t_products as $product)
+			{
+				$product_tid = xarr($product, 'tid');
+				$product_offernum = xarr($product, 'offernum');
+				$product_color = xarr($product, 'color', 0);
+				$product_size = xarr($product, 'size', 0);
+				$product_count = intval(xarr($product, 'count', 1));
+				if($product_count <= 0) $product_count = 1;
+				
+				$rproductoffer = IOCore::call(
+					'app.class.offers.dbsearch2',
+					array(
+						'filter' => array(
+							'tid' => $product_tid,
+							'offer_number' => $product_offernum,
+							'type' => 2, // розничное
+						),
+						'limit' => 1,
+						'out' => 'array',
+					)
+				);
+				$resproductoffer = xarr($rproductoffer, 'res', array());
+				$productoffer = array_shift($resproductoffer);
+				$productofferparams = xarr($productoffer, 'parameters', array());
+				$productoffer_cost_per_unit = null;
+				foreach($productofferparams as $param)
+				{
+					$param_color_pkid = xarr($param, 'color_pkid');
+					$param_size_pkid = xarr($param, 'size_pkid');
+					if($param_color_pkid == $product_color and $param_size_pkid == $product_size)
+					{
+						$productoffer_cost_per_unit = xarr($param, 'cost_per_unit');
+						break;
+					}
+				}
+				
+				for($i = 0; $i < $product_count; $i++)
+				{
+					$products[] = array_merge(
+						$product, array(
+							//'tid' => 'GKZ1C207', // акцептованнный ИНТ товара
+							
+							'offer_number' => xarr($productoffer, 'offer_number'),
+							'offer_name' => xarr($productoffer, 'name'),
+							
+							'size_pkid' => $product_size,
+							'color_pkid' => $product_color,
+							'gender_pkid' => 0,
+							'amount' => $productoffer_cost_per_unit, // цена за единицу
+							
+							'discount' => 0, // скидка в процентах
+							'isDeleted' => false, // был ли возврат товара?
+							
+							// если не null то товары были акцептованы
+							'qr_code_creator_number' => null, // создатель QR кода (номер)
+							'qr_code_serial_number' => null, // серийный номер продукта
+							'qr_code_type' => null, // серийный номер продукта
+							
+							// значения устанавливаются в момент продажи
+							//'qr_code_count_si' => 1, // количество товара в СИ
+							//'qr_code_si' => 1, // ед. измерения
+						)
+					);
+					
+					// считаем сумму
+					$amount += xarr($productoffer_cost_per_unit, 'value', 0);
+				}
+			}
+			unset($t_products);
+			//$amount += $amount_delivery;
+			
+			$c = IOCore::Instance('app.class.invoices');
+			$c->assign_arr(
+				array(
+					'company_pkid' => $company_pkid,
+					'client_phone' => $client_tel,
+					'creator_pkid' => $ioSession->user->id,
+					'creator_login' => $ioSession->user->login,
+					'products' => $products,
+					
+					// клиент user_<login> - логин пользователя; company_<pkid> - pkid компании; crm_<pkid> - pkid записи из CRM; text_<ФИО> - незарегистрированный пользователь;
+					'client_pkid' => 'user_'.$ioSession->user->login,
+					
+					// статус инвойса (ранее "тип", хз почему)
+					// 0-создан, 1-акцептован, 2-принят продавцом, 3-оплачен, 4-доставлен
+					'type' => 1,
+					
+					// массив из акцептованных ИНТ товаров
+					'products_tids' => array(),
+					
+					// количество продуктов
+					'products_count' => count($products),
+					
+					// общая сумма товаров, которая вычисляется по предложениям
+					'amount' => array(
+						'value' => $amount,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					
+					// информация о доставке
+					'delivery_info' => $delivery_info,
+					
+					// стоимость доставки
+					'amount_delivery' => array(
+						'value' => $amount_delivery,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					
+					// сумма за которую были куплены товары
+					'amount_paid' => array(
+						'value' => 0,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					// сумма наличных
+					'amount_cash' => array(
+						'value' => 0,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					// сумма скидки
+					'discount' => array(
+						'value' => 0,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					// сумма аванса
+					/*'prepayment' => array(
+						'value' => 0,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),*/
+					
+					// дата продажи
+					//'dateSale' => iogetdbtimeutc_rfc822(time()),
+				)
+			);
+			$c->create();
+			if(xarr($c, 'error_code', EIO_FALSE) != EIO_OK)
+			{
+				$result->error_code = xarr($c, 'error_code', EIO_FALSE);
+				$result->error_str = xarr($c, 'error_str', '');
+				goto __exit;
+			}
+			
+			// уведомление сотрудников по телеграму
+			$rnusers = IOCore::call(
+				'app.class.noticeUsers.dbsearch2',
+				array(
+					'filter' => array(
+						'company_pkid' => $company_pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1000,
+					'out' => 'array',
+				)
+			);
+			$nusers = xarr($rnusers, 'res', array());
+			$nusers_user_pkid = array();
+			foreach($nusers as $nuser)
+			{
+				if(!in_array(xarr($nuser, 'user_pkid'), $nusers_user_pkid))
+				{
+					$nusers_user_pkid[] = xarr($nuser, 'user_pkid');
+				}
+				$sendTelegram = IOCore::callAction(
+					'telegram.model.kdtappbot.sendTextByID',
+					array(
+						'id' => xarr($nuser, 'user_pkid'),
+						'message' => array(
+							'Уважаемый сотрудник отдела продаж BMC Trade!'."\n\n".
+							'Поступил новый интернет-заказ № "'.xarr($c, 'invoice_number', '???').'".'."\n".
+							'Просьба, обработать заказ как можно скорее.'."\n".
+							'https:'.xarr($ioProjects, 'trade').'/cabinet/invoices'."\n\n".
+							'Спасибо.',
+						),
+					)
+				);
+			}
+			$sendNotice = IOCore::callAction(
+				'com.notice.model.notices.add',
+				array(
+					'service' => 'trade',
+					'module_name' => 'bmc.trade2.model.invoices',
+					'method' => 'actionAddBuyer',
+					'type' => 0, // тип уведомления (0: по умолчанию, 1: информация, 2: предупреждение, 3: ошибка)
+					'cat' => 0, // 0=bell, 1=billhorn, 2=coin1, 3=coin2, 4=webinar, 5=webinar2
+					'link' => 'http:'.xarr($ioProjects, 'trade').'/cabinet/invoices',
+					'title' => 'Поступил интернет-заказ',
+					'message_lk' => 'Поступил новый интернет-заказ № "'.xarr($c, 'invoice_number', '???').'". Просьба, обработать заказ как можно скорее.',
+					'message_email' => 'Поступил новый интернет-заказ № "'.xarr($c, 'invoice_number', '???').'".<br/>Просьба, обработать заказ как можно скорее.',
+					//'message_sms' => '',
+					'sendMethods' => array(1), // дополнительные методы отправки уведомления (1=email, 2=sms)
+					//'rules' => 'org.eopkz.webinars.accept',
+					//'sender' => $ioSession->user->id,
+					'users_pkid' => $nusers_user_pkid,
+					//'company_pkid' => $ioSession->user->getCompanyID(),
+					'gmtimeEvent' => iogetdbtimeutc_rfc822(time()),
+					'gmtimeShow' => iogetdbtimeutc_rfc822(time()),
+				)
+			);
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		// удаление инвойса клиентом
+		public static function doDeleteClient($result, $params)
+		{
+			global $ioSession;
+			
+			$pkid = xarr($params, 'pkid');
+			
+			if($pkid == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Не указан pkid инвойса';
+				goto __exit;
+			}
+			
+			$r = IOCore::call(
+				'app.class.invoices.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+				)
+			);
+			$res = xarr($r, 'res', array());
+			$obj = array_shift($res);
+			if($obj == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Инвойс не найден';
+				goto __exit;
+			}
+			if(xarr($obj, 'client_pkid') != 'user_'.$ioSession->user->login)
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Вы не можете удалить чужой инвойс';
+				goto __exit;
+			}
+			/*if(xarr($obj, 'type') > 2)
+			{
+				$result->error_code = EIO_USER - 2;
+				$result->error_str = 'Вы не можете удалить инвойс, так как уже была оформлена продажа';
+				goto __exit;
+			}*/
+			
+			if(!in_array(xarr($obj, 'status'), array(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 101)))
+			{
+				$result->error_code = EIO_USER - 2;
+				if(xarr($obj, 'type') == 0)
+				{
+					$result->error_str = 'Вы не можете удалить продажу, так как заказ на доставке либо завершен';
+				}
+				elseif(xarr($obj, 'type') == 1)
+				{
+					$result->error_str = 'Вы не можете удалить инвойс, так как уже был осуществлен возврат';
+				}
+				elseif(xarr($obj, 'type') == 2)
+				{
+					$result->error_str = 'Вы не можете удалить заказ, так как заказ на доставке либо завершен';
+				}
+				goto __exit;
+			}
+			if(xarr($obj, 'isPayed', false))
+			{
+				$result->error_code = EIO_USER - 2;
+				$result->error_str = 'Вы не можете удалить инвойс, так как была внесена оплата';
+				goto __exit;
+			}
+			
+			// удаляем документы данного инвойса
+			dbSearchAll(array(
+				'entity' => 'app.class.invoicesDocuments.dbsearch2',
+				'filter' => array(
+					'invoice_pkid' => $pkid,
+				),
+				'out' => 'object',
+				'cursor' => false,
+				'callback' => function($cursor, $res, $count) use ($pkid)
+				{
+					foreach($res as $obj)
+					{
+						// удаляем файл с диска
+						if($obj->file) unlink('./files/data/invoices/documents/'.$pkid.'/'.$obj->file);
+						
+						$obj->delete();
+					}
+				}
+			));
+			
+			// удаление инвойса
+			$obj->delete();
+			if(xarr($obj, 'error_code', EIO_FALSE) != EIO_OK)
+			{
+				$result->error_code = xarr($obj, 'error_code', EIO_FALSE);
+				$result->error_str = xarr($obj, 'error_str', '');
+				goto __exit;
+			}
+			
+			// уведомление сотрудников по телеграму
+			$rnusers = IOCore::call(
+				'app.class.noticeUsers.dbsearch2',
+				array(
+					'filter' => array(
+						'company_pkid' => xarr($obj, 'company_pkid'),
+						'isDeleted' => false,
+					),
+					'limit' => 1000,
+					'out' => 'array',
+				)
+			);
+			$nusers = xarr($rnusers, 'res', array());
+			$nusers_user_pkid = array();
+			foreach($nusers as $nuser)
+			{
+				if(!in_array(xarr($nuser, 'user_pkid'), $nusers_user_pkid))
+				{
+					$nusers_user_pkid[] = xarr($nuser, 'user_pkid');
+				}
+				$sendTelegram = IOCore::callAction(
+					'telegram.model.kdtappbot.sendTextByID',
+					array(
+						'id' => xarr($nuser, 'user_pkid'),
+						'message' => array(
+							'Уважаемый сотрудник отдела продаж BMC Trade!'."\n\n".
+							'Интернет-заказ № "'.xarr($obj, 'invoice_number', '???').'" был отменен заказчиком.'."\n".
+							'Спасибо.',
+						),
+					)
+				);
+			}
+			$sendNotice = IOCore::callAction(
+				'com.notice.model.notices.add',
+				array(
+					'service' => 'trade',
+					'module_name' => 'bmc.trade2.model.invoices',
+					'method' => 'actionDeleteClient',
+					'type' => 0, // тип уведомления (0: по умолчанию, 1: информация, 2: предупреждение, 3: ошибка)
+					'cat' => 0, // 0=bell, 1=billhorn, 2=coin1, 3=coin2, 4=webinar, 5=webinar2
+					'link' => 'http:'.xarr($ioProjects, 'trade').'/cabinet/invoices',
+					'title' => 'Интернет-заказ отменен',
+					'message_lk' => 'Интернет-заказ № "'.xarr($obj, 'invoice_number', '???').'" был отменен заказчиком.',
+					'message_email' => 'Интернет-заказ № "'.xarr($obj, 'invoice_number', '???').'" был отменен заказчиком.',
+					//'message_sms' => '',
+					'sendMethods' => array(1), // дополнительные методы отправки уведомления (1=email, 2=sms)
+					//'rules' => 'org.eopkz.webinars.accept',
+					//'sender' => $ioSession->user->id,
+					'users_pkid' => $nusers_user_pkid,
+					//'company_pkid' => $ioSession->user->getCompanyID(),
+					'gmtimeEvent' => iogetdbtimeutc_rfc822(time()),
+					'gmtimeShow' => iogetdbtimeutc_rfc822(time()),
+				)
+			);
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		
+		
+		
+		// for estol, terminal, tablo
+		// создание инвойса через терминал
+		public static function doAddTerminal($result, $params)
+		{
+			$pay_type = intval(xarr($params, 'pay_type', 1));
+			$cashier = xarr($params, 'cashier', false);
+			$user_pkid = xarr($params, 'user_pkid');
+			$user_login = xarr($params, 'user_login');
+			$company_pkid = xarr($params, 'company_pkid');
+			$t_products = xarr($params, 'products', array());
+			
+			if($user_pkid == null or $user_pkid == '')
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Не указан user_pkid';
+				goto __exit;
+			}
+			if($user_login == null or $user_login == '')
+			{
+				$result->error_code = EIO_USER - 2;
+				$result->error_str = 'Не указан user_login';
+				goto __exit;
+			}
+			if($company_pkid == null or $company_pkid == '')
+			{
+				$result->error_code = EIO_USER - 3;
+				$result->error_str = 'Не указан pkid компании';
+				goto __exit;
+			}
+			if($pay_type == null or $pay_type == '' or ($pay_type != 1 and $pay_type != 2))
+			{
+				$result->error_code = EIO_USER - 4;
+				$result->error_str = 'Не указан либо некорректно указан pay_type';
+				goto __exit;
+			}
+			
+			$amount = 0;
+			$products = array();
+			$products_tids = array();
+			foreach($t_products as $product)
+			{
+				$product_tid = xarr($product, 'tid');
+				$product_offernum = xarr($product, 'offernum');
+				
+				$rproductoffer = IOCore::call(
+					'app.class.offers.dbsearch2',
+					array(
+						'filter' => array(
+							'tid' => $product_tid,
+							'offer_number' => $product_offernum,
+							'type' => 2, // розничное
+						),
+						'limit' => 1,
+						'out' => 'array',
+					)
+				);
+				$resproductoffer = xarr($rproductoffer, 'res', array());
+				$productoffer = array_shift($resproductoffer);
+				$productofferparams = xarr($productoffer, 'parameters', array());
+				$productoffer_cost_per_unit = null;
+				foreach($productofferparams as $param)
+				{
+					$param_color_pkid = xarr($param, 'color_pkid');
+					$param_size_pkid = xarr($param, 'size_pkid');
+					if($param_color_pkid == 0 and $param_size_pkid == 0)
+					{
+						$productoffer_cost_per_unit = xarr($param, 'cost_per_unit');
+						break;
+					}
+				}
+				
+				$products[] = array_merge(
+					$product, array(
+						//'tid' => 'GKZ1C207', // акцептованнный ИНТ товара
+						'size_pkid' => 0,
+						'color_pkid' => 0,
+						'gender_pkid' => 0,
+						'amount' => $productoffer_cost_per_unit, // цена за единицу
+						
+						'discount' => 0, // скидка в процентах
+						'isDeleted' => false, // был ли возврат товара?
+						
+						'offer_name' => xarr($productoffer, 'name', ''),
+						'offer_number' => $product_offernum,
+						
+						// если не null то товары были акцептованы
+						'qr_code_creator_number' => null, // создатель QR кода (номер)
+						'qr_code_serial_number' => null, // серийный номер продукта
+						'qr_code_type' => null, // серийный номер продукта
+						
+						// значения устанавливаются в момент продажи
+						//'qr_code_count_si' => 1, // количество товара в СИ
+						//'qr_code_si' => 1, // ед. измерения
+					)
+				);
+				if(!in_array($product_tid, $products_tids))
+				{
+					$products_tids[] = $product_tid;
+				}
+				
+				// считаем сумму
+				$amount += xarr($productoffer_cost_per_unit, 'value', 0);
+			}
+			unset($t_products);
+			//$amount += $amount_delivery;
+			
+			// проверка на наличие баланса если выбран расчет через баланс
+			if($pay_type == 2)
+			{
+				$balance = IOCore::callAction(
+					'com.model.user.getBalance',
+					array(
+						'user_pkid' => $user_pkid,
+					)
+				);
+				$balance = xarr($balance, 'balance', 0);
+				
+				if($balance < $amount)
+				{
+					$result->error_code = EIO_USER - 5;
+					$result->error_str = 'Недостаточно средств на балансе аккаунта';
+					goto __exit;
+				}
+			}
+			
+			$c = IOCore::Instance('app.class.invoices');
+			$c->assign_arr(
+				array(
+					'company_pkid' => $company_pkid,
+					'client_phone' => '',
+					'creator_pkid' => $user_pkid,
+					'creator_login' => $user_login,
+					'products' => $products,
+					
+					// клиент user_<login> - логин пользователя; company_<pkid> - pkid компании; crm_<pkid> - pkid записи из CRM; text_<ФИО> - незарегистрированный пользователь;
+					'client_pkid' => 'user_'.$user_login,
+					
+					// статус инвойса (ранее "тип", хз почему)
+					// 0-создан, 1-акцептован клиентом, 2-акцептован продавцом, 3-оплачен, 4-доставлен, 5-комплектуется, 6-доставляется
+					// тип инвойса (ioEnum.invoices_types)
+					'type' => 0, // продажа
+					
+					// статус инвойса
+					'status' => 2,
+					
+					// оплачен ли инвойс
+					'isPayed' => ($cashier ? true : (($pay_type == 2) ? true : false)),
+					'dateSale' => ($cashier ? time() : (($pay_type == 2) ? time() : null)),
+					
+					// массив из акцептованных ИНТ товаров
+					'products_tids' => $products_tids,
+					
+					// количество продуктов
+					'products_count' => count($products),
+					
+					// общая сумма товаров, которая вычисляется по предложениям
+					'amount' => array(
+						'value' => $amount,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					
+					// информация о доставке
+					'delivery_info' => array(),
+					
+					// стоимость доставки
+					'amount_delivery' => array(
+						'value' => 0,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					
+					// сумма за которую были куплены товары
+					'amount_paid' => array(
+						'value' => 0,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					// сумма наличных
+					'amount_cash' => array(
+						'value' => 0,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					// сумма скидки
+					'discount' => array(
+						'value' => 0,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),
+					// сумма аванса
+					/*'prepayment' => array(
+						'value' => 0,
+						'currency' =>  'KZT',
+						'pay_type' => 1,
+					),*/
+					
+					// дата продажи
+					//'dateSale' => iogetdbtimeutc_rfc822(time()),
+				)
+			);
+			$c->create();
+			if(xarr($c, 'error_code', EIO_FALSE) != EIO_OK)
+			{
+				$result->error_code = xarr($c, 'error_code', EIO_FALSE);
+				$result->error_str = xarr($c, 'error_str', '');
+				goto __exit;
+			}
+			
+			if($pay_type == 2)
+			{
+				$transactPay = IOCore::callAction(
+					'com.model.cabinet.buyorders.addPay',
+					array(
+						'type' => 2, // 1: пополнение, 2: списание
+						'uslugs' => array(
+							array(
+								'name' => 'Оплата заказа №'.xarr($c, 'invoice_number').' в школьной столовой',
+								'count' => 1,
+								'price' => $amount,
+							),
+						),
+						'place' => 'Баланс аккаунта',
+						'user_pkid' => $user_pkid,
+						'user_login' => $user_login,
+					)
+				);
+				if(xarr($transactPay, 'error_code', EIO_FALSE) != EIO_OK)
+				{
+					$c->isPayed = false;
+					$c->dateSale = null;
+					$c->update();
+					
+					$result->error_code = xarr($transactPay, 'error_code', EIO_FALSE);
+					$result->error_str = xarr($transactPay, 'error_str', '');
+					goto __exit;
+				}
+			}
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		// изменение инвойса кассиром через терминал и принятие оплаты
+		public static function doEditTerminal($result, $params)
+		{
+			$pay_type = intval(xarr($params, 'pay_type', 3));
+			$invoice_pkid = xarr($params, 'invoice_pkid');
+			$company_pkid = xarr($params, 'company_pkid');
+			$t_products = xarr($params, 'products', array());
+			
+			if($invoice_pkid == null or $invoice_pkid == '')
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Не указан invoice_pkid';
+				goto __exit;
+			}
+			if($company_pkid == null or $company_pkid == '')
+			{
+				$result->error_code = EIO_USER - 2;
+				$result->error_str = 'Не указан pkid компании';
+				goto __exit;
+			}
+			if($pay_type == null or $pay_type == '' or ($pay_type != 1 and $pay_type != 3))
+			{
+				$result->error_code = EIO_USER - 3;
+				$result->error_str = 'Не указан либо некорректно указан pay_type';
+				goto __exit;
+			}
+			
+			$amount = 0;
+			$products = array();
+			$products_tids = array();
+			foreach($t_products as $product)
+			{
+				$product_tid = xarr($product, 'tid');
+				$product_offernum = xarr($product, 'offernum');
+				
+				$rproductoffer = IOCore::call(
+					'app.class.offers.dbsearch2',
+					array(
+						'filter' => array(
+							'tid' => $product_tid,
+							'offer_number' => $product_offernum,
+							'type' => 2, // розничное
+						),
+						'limit' => 1,
+						'out' => 'array',
+					)
+				);
+				$resproductoffer = xarr($rproductoffer, 'res', array());
+				$productoffer = array_shift($resproductoffer);
+				$productofferparams = xarr($productoffer, 'parameters', array());
+				$productoffer_cost_per_unit = null;
+				foreach($productofferparams as $param)
+				{
+					$param_color_pkid = xarr($param, 'color_pkid');
+					$param_size_pkid = xarr($param, 'size_pkid');
+					if($param_color_pkid == 0 and $param_size_pkid == 0)
+					{
+						$productoffer_cost_per_unit = xarr($param, 'cost_per_unit');
+						break;
+					}
+				}
+				
+				$products[] = array_merge(
+					$product, array(
+						//'tid' => 'GKZ1C207', // акцептованнный ИНТ товара
+						'size_pkid' => 0,
+						'color_pkid' => 0,
+						'gender_pkid' => 0,
+						'amount' => $productoffer_cost_per_unit, // цена за единицу
+						
+						'discount' => 0, // скидка в процентах
+						'isDeleted' => false, // был ли возврат товара?
+						
+						'offer_name' => xarr($productoffer, 'name', ''),
+						'offer_number' => $product_offernum,
+						
+						// если не null то товары были акцептованы
+						'qr_code_creator_number' => null, // создатель QR кода (номер)
+						'qr_code_serial_number' => null, // серийный номер продукта
+						'qr_code_type' => null, // серийный номер продукта
+						
+						// значения устанавливаются в момент продажи
+						//'qr_code_count_si' => 1, // количество товара в СИ
+						//'qr_code_si' => 1, // ед. измерения
+					)
+				);
+				if(!in_array($product_tid, $products_tids))
+				{
+					$products_tids[] = $product_tid;
+				}
+				
+				// считаем сумму
+				$amount += xarr($productoffer_cost_per_unit, 'value', 0);
+			}
+			unset($t_products);
+			//$amount += $amount_delivery;
+			
+			$r = IOCore::call(
+				'app.class.invoices.dbsearch2',
+				array(
+					'filter' => array(
+						'company_pkid' => $company_pkid,
+						'pkid' => $invoice_pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+				)
+			);
+			$res = xarr($r, 'res', array());
+			$obj = array_shift($res);
+			if($obj == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Инвойс не найден';
+				goto __exit;
+			}
+			
+			$obj->products = $products;
+			$obj->status = 2;
+			$obj->isPayed = ($pay_type == 3) ? true : false;
+			$obj->dateSale = ($pay_type == 3) ? time() : null;
+			$obj->products_tids = $products_tids;
+			$obj->products_count = count($products);
+			$obj->amount = array(
+				'value' => $amount,
+				'currency' =>  'KZT',
+				'pay_type' => 1,
+			);
+			$obj->update();
+			if(xarr($obj, 'error_code', EIO_FALSE) != EIO_OK)
+			{
+				$result->error_code = xarr($obj, 'error_code', EIO_FALSE);
+				$result->error_str = xarr($obj, 'error_str', '');
+				goto __exit;
+			}
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		// отмена заказа кассиром через терминал
+		public static function doCancelTerminal($result, $params)
+		{
+			$invoice_pkid = xarr($params, 'invoice_pkid');
+			$company_pkid = xarr($params, 'company_pkid');
+			
+			if($invoice_pkid == null or $invoice_pkid == '')
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Не указан invoice_pkid';
+				goto __exit;
+			}
+			if($company_pkid == null or $company_pkid == '')
+			{
+				$result->error_code = EIO_USER - 2;
+				$result->error_str = 'Не указан pkid компании';
+				goto __exit;
+			}
+			
+			$r = IOCore::call(
+				'app.class.invoices.dbsearch2',
+				array(
+					'filter' => array(
+						'company_pkid' => $company_pkid,
+						'pkid' => $invoice_pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+				)
+			);
+			$res = xarr($r, 'res', array());
+			$obj = array_shift($res);
+			if($obj == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Инвойс не найден';
+				goto __exit;
+			}
+			
+			$obj->delete();
+			if(xarr($obj, 'error_code', EIO_FALSE) != EIO_OK)
+			{
+				$result->error_code = xarr($obj, 'error_code', EIO_FALSE);
+				$result->error_str = xarr($obj, 'error_str', '');
+				goto __exit;
+			}
+			
+			$result->error_code = EIO_OK;
+			__exit:
+			return $result;
+		}
+		
+		// изменение статуса инвойса через комплектовщика или терминал
+		public static function doSetType($result, $params)
+		{
+			global $ioSession;
+			
+			$pkid = xarr($params, 'pkid');
+			$type = xarr($params, 'type');
+			
+			if($pkid == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Не указан pkid';
+				goto __exit;
+			}
+			if(!in_array($type, array(6, 5, 4, 3)))
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Некорректный тип инвойса';
+				goto __exit;
+			}
+			
+			$r = IOCore::call(
+				'app.class.invoices.dbsearch2',
+				array(
+					'filter' => array(
+						'pkid' => $pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+				)
+			);
+			$res = xarr($r, 'res', array());
+			$obj = array_shift($res);
+			if($obj == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Инвойс не найден';
+				goto __exit;
+			}
+			
+			if($type == 3)
+			{
+				$obj->cashier_pkid = $ioSession->user->id;
+				$obj->cashier_login = $ioSession->user->login;
+			}
+			if($type == 6)
+			{
+				$obj->picker_pkid = $ioSession->user->id;
+				$obj->picker_login = $ioSession->user->login;
+			}
+			$obj->type = $type;
+			$obj->update();
+			
+			$result->error_code = xarr($obj, 'error_code', EIO_FALSE);
+			$result->error_str = xarr($obj, 'error_str', '');
+			
+			__exit:
+			return $result;
+		}
+		
+		// создание инвойса в терминале
+		public static function doAddTerminal2($result, $params)
+		{
+			global $ioSession;
+			
+			$client_login = xarr($params, 'client_login');
+			$products = xarr($params, 'products', array());
+			
+			if($client_login == null)
+			{
+				$result->error_code = EIO_USER - 1;
+				$result->error_str = 'Не указан логин клиента';
+				goto __exit;
+			}
+			
+			$c = IOCore::Instance('app.class.invoices');
+			$c->client_pkid = 'user_'.$client_login;
+			$c->company_pkid = $ioSession->user->getCompanyID();
+			$c->creator_pkid = $ioSession->user->id;
+			$c->creator_login = $ioSession->user->login;
+			$c->type = 0;
+			$c->status = 2;
+			$c->isPayed = false;
+			$c->amount_paid = array(
+				'currency' => 'KZT',
+				'value' => 0,
+				'pay_type' => null,
+			);
+			$c->amount_cash = array(
+				'currency' => 'KZT',
+				'value' => 0,
+				'pay_type' => null,
+			);
+			$c->discount = array(
+				'currency' => 'KZT',
+				'value' => 0,
+				'pay_type' => null,
+			);
+			/*$c->prepayment = array(
+				'currency' => 'KZT',
+				'value' => 0,
+				'pay_type' => null,
+			);*/
+			$c->products = $products;
+			
+			$fullcost = 0;
+			foreach($products as $product)
+			{
+				$product_discount = xarr($product, 'discount');
+				$product_cost_per_unit = xarr(xarr($product, 'cost_per_unit'), 'value');
+				if($product_discount != null and $product_discount != '')
+				{
+					$fullcost += ($product_cost_per_unit - (($product_cost_per_unit / 100) * $product_discount));
+				}
+				else
+				{
+					$fullcost += $product_cost_per_unit;
+				}
+			}
+			$c->amount = array(
+				'currency' => 'KZT',
+				'value' => $fullcost,
+				'pay_type' => null,
+			);
+			$c->create();
+			
+			$result->pkid = xarr($c, 'pkid');
+			
+			$result->error_code = xarr($c, 'error_code');
+			$result->error_str = xarr($c, 'error_str');
+			
+			__exit:
+			return $result;
+		}
+		
+		// скрытие заказа клиентом
+		public static function doSetHide($result, $params)
+		{
+			global $ioSession;
+			
+			$pkid = xarr($params, 'pkid');
+			
+			if($pkid == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Не указан pkid инвойса';
+				goto __exit;
+			}
+			
+			$r = IOCore::call(
+				'app.class.invoices.dbsearch2',
+				array(
+					'filter' => array(
+						'client_pkid' => 'user_'.$ioSession->user->login,
+						'pkid' => $pkid,
+						'isDeleted' => false,
+					),
+					'limit' => 1,
+				)
+			);
+			$res = xarr($r, 'res', array());
+			$obj = array_shift($res);
+			if($obj == null)
+			{
+				$result->error_code = EIO_NOTFOUND_OBJECT;
+				$result->error_str = 'Инвойс не найден';
+				goto __exit;
+			}
+			
+			$obj->isHide = true;
+			$obj->update();
+			
+			$result->error_code = xarr($obj, 'error_code', EIO_FALSE);
+			$result->error_str = xarr($obj, 'error_str', '');
+			
+			__exit:
+			return $result;
+		}
+	}
