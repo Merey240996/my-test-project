@@ -1,0 +1,1312 @@
+<template>
+	<main class="main-content transition-content">
+		<div class="transition-content overflow-visible px-4 sm:px-(--margin-x) pb-8">
+			<div class="relative mt-4 sm:mt-5 space-y-4 sm:space-y-6 lg:mt-6">
+
+				<!-- Header -->
+				<header class="min-h-16 flex flex-wrap items-center justify-between gap-3 px-4 sm:px-8 py-3 border-b border-slate-200 glass-panel z-10 shrink-0">
+					<div class="flex items-center gap-2 sm:gap-6 flex-wrap">
+						<h1 class="text-lg sm:text-2xl font-bold text-slate-800">История инвойсов</h1>
+						<Badge color="primary" variant="soft" class="px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-semibold flex items-center gap-1.5 shadow-sm">
+							<span class="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+							<span class="hidden sm:inline">Мастер-Данные: Только чтение (SST)</span>
+							<span class="sm:hidden">Только чтение</span>
+						</Badge>
+					</div>
+					<div class="flex items-center gap-3">
+						<div class="text-xs sm:text-sm text-slate-500">
+							Всего: <span class="font-bold text-slate-800">{{ formatCurrency(totalInvoicesSum) }}</span>
+						</div>
+						<Button class="flex items-center justify-center gap-2 px-3 sm:px-4 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg" @click="this.$refs.invoiceCreateModal.open('sale')">
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg> Продажа
+						</Button>
+						<Button class="flex items-center justify-center gap-2 px-3 sm:px-4 border border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg" @click="this.$refs.invoiceReturnModal.open()">
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></svg> Возврат
+						</Button>
+						<Button color="primary" class="flex items-center justify-center gap-2 px-3 sm:px-4" @click="this.$refs.invoiceCreateModal.open('order')">
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg> Заказ
+						</Button>
+					</div>
+				</header>
+
+				<!-- Заголовок и фильтры -->
+				<section class="flex flex-col gap-4 flex-shrink-0">
+
+					<div class="flex flex-wrap gap-3 items-center bg-white p-3 rounded-xl border border-bmc-border shadow-sm">
+						<!-- Единый поиск: уходит параметром 'search' в App\Api\InvoiceApi::doSearch,
+						     trade сам разбирает %text/pkid: (см. invoices.html). Отдельного инпута
+						     под логины/pkid/tid больше нет — эти поля НЕ покрыты %text (см. комментарий
+						     у buildServerFilter про AND-only комбинирование в InvoiceApi::buildFilter);
+						     для честного поиска по ним нужна доработка бэкенда, а не второй инпут. -->
+						<div class="relative flex-1 min-w-[280px]">
+							<Input
+								v-model="filters.search"
+								type="text"
+								placeholder="Поиск по инвойсам, клиентам, картам (или pkid:123)..."
+								class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-transparent focus:bg-white rounded-lg text-sm font-medium outline-none transition-all"
+								@suffix-click="filters.search = ''"
+								:clickableSuffix="true"
+							>
+								<template #prefix>
+									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search-icon lucide-search"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+								</template>
+
+								<template v-if="filters.search != ''" #suffix>
+									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x-icon lucide-x"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+								</template>
+							</Input>
+						</div>
+
+						<!-- Активные фильтры, выбранные через FilterSelector — набор полей и порядок
+						     держит сам table.options.meta (см. toolbarFilters/setToolbarFilters в
+						     useVueTable), виджет подбирается по типу поля из invoices_struct
+						     (select -> FacetedFilter, number -> RangeFilter, date -> DateFilter),
+						     см. INVOICE_FILTER_FIELDS + isDateFilterField/isRangeFilterField ниже.
+						     1:1 по структуре с CustomersList.vue. -->
+						<template v-for="filterKey in toolbarFilters" :key="filterKey">
+							<DateFilter
+								v-if="isDateFilterField(filterKey)"
+								:column="table.getColumn(filterKey)"
+								:title="filterLabel(filterKey)"
+							/>
+							<RangeFilter
+								v-else-if="isRangeFilterField(filterKey)"
+								:column="table.getColumn(filterKey)"
+								:title="filterLabel(filterKey)"
+								:button-text="rangeButtonText(filterKey)"
+							/>
+							<FacetedFilter
+								v-else-if="table && table.getColumn(filterKey)"
+								:column="table.getColumn(filterKey)"
+								:title="filterLabel(filterKey)"
+								:options="getFilterOptions(filterKey)"
+							/>
+						</template>
+
+						<FilterSelector :table="table" :options="filterOptions" />
+
+						<Button
+							v-if="table && table.getState().columnFilters.length > 0"
+							@click="table.resetColumnFilters(); toolbarFilters = []"
+							class="glass-btn hover:text-blue-600 flex items-center gap-2"
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-rotate-ccw-icon lucide-rotate-ccw"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> 
+							Сбросить фильтры
+						</Button>
+					</div>
+				</section>
+
+				<!-- Сетка контента -->
+				<div class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-0 items-start">
+
+					<!-- ЛЕВАЯ КОЛОНКА (col-span-7) — Список счетов -->
+					<div class="lg:col-span-12 flex flex-col gap-6 min-h-0">
+						<!-- Без max-h/flex-1/min-h-0 и без simplebar-скролла — высота секции растёт
+						     вместе с кол-вом строк в filteredRows, скроллится уже вся страница
+						     (родительский .transition-content), а не внутренний контейнер таблицы. -->
+						<section class="crm-card flex flex-col overflow-hidden shadow-sm">
+							<div class="px-4 sm:px-5 py-3 sm:py-4 border-b border-bmc-border bg-gray-50/50 flex flex-wrap justify-between items-center gap-2">
+								<h2 class="font-bold text-gray-800 text-sm sm:text-base flex items-center gap-2 shrink-0">
+									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0"><path d="M11 5h10"/><path d="M11 12h10"/><path d="M11 19h10"/><path d="M4 4h1v5"/><path d="M4 9h2"/><path d="M6.5 20H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02"/></svg>
+									<span class="hidden sm:inline">Счета и фискальные инвойсы</span>
+									<span class="sm:hidden">Инвойсы</span>
+								</h2>
+								<span class="text-[10px] sm:text-xs font-semibold text-gray-400">Найдено: {{ totalInvoices }}</span>
+							</div>
+							<div style="width: 0; min-width: 100%; overflow-x: auto;">
+								<Table hoverable class="w-full text-left rtl:text-right min-w-[650px]">
+									<thead class="table-thead group/thead sticky top-0 z-10" ref="theadRef">
+										<tr class="table-tr group/tr">
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4 w-12 text-center">
+												<Checkbox
+													:checked="table && table.getIsAllRowsSelected()"
+													@change="table && table.getToggleAllRowsSelectedHandler()($event)"
+												/>
+											</th>
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4 text-center" title="Тип: продажа / возврат / заказ">
+												Тип
+											</th>
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4">
+												Номер / Дата
+											</th>
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4">
+												Склад
+											</th>
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4">
+												Клиент
+											</th>
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4">
+												Статус
+											</th>
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4 text-center">
+												Оплата
+											</th>
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4 text-center">
+												Кол-во
+											</th>
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4">
+												Сумма
+											</th>
+											<th class="table-th group/th bg-gray-200 font-semibold uppercase text-gray-800 dark:bg-dark-800 dark:text-dark-100 py-3 px-4">
+												Действия
+											</th>
+										</tr>
+									</thead>
+									<tbody class="table-tbody group/tbody">
+										<tr
+											v-for="row in filteredRows"
+											:key="row.original.id"
+											class="table-tr group/tr border-y border-transparent border-b-gray-200 last:border-none dark:border-b-dark-500 cursor-pointer"
+											:class="{ 'font-semibold': selectedInvoice?.id === row.original.id, 'bg-primary-50/30': row.getIsSelected() }"
+											@click="openDrawer(row.original)"
+										>
+											<td class="table-td group/td py-3.5 px-4 text-center align-middle" @click.stop>
+												<Checkbox
+													:checked="row.getIsSelected()"
+													@change="row.toggleSelected()"
+												/>
+											</td>
+											<td class="table-td group/td py-3.5 px-4 text-center" :title="getTypeLabel(row.original.type)">
+												<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="inline-block text-slate-500">
+													<path v-if="row.original.type === 0" d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+													<path v-else-if="row.original.type === 1" d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8M3 3v5h5"/>
+													<path v-else d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4Z M3 6h18 M16 10a4 4 0 0 1-8 0"/>
+												</svg>
+											</td>
+											<td class="table-td group/td py-3.5 px-4 font-mono">
+												<div class="text-xs font-bold text-slate-800">#{{ row.original.id_str }}</div>
+												<div class="text-[10px] text-slate-400 mt-0.5">{{ row.original.date }}</div>
+											</td>
+											<td class="table-td group/td py-3.5 px-4">
+												<div class="text-xs text-slate-700">{{ row.original.warehouse || '-' }}</div>
+											</td>
+											<td class="table-td group/td py-3.5 px-4">
+												<div class="font-bold text-slate-800">{{ row.original.client || '-' }}</div>
+												<div class="text-[10px] text-slate-400 font-mono mt-0.5">{{ row.original.clientMeta || '' }}</div>
+												<div class="text-[10px] text-slate-400 font-mono mt-0.5">{{ row.original.hyperId ? ('карта: ' + row.original.hyperId) : '' }}</div>
+											</td>
+											<td class="table-td group/td py-3.5 px-4 text-center">
+												<Badge 
+													unstyled
+													class="px-2.5 py-1 rounded text-[10px] font-bold border" 
+													:class="getStatusBadgeClass(row.original.status)"
+												>
+													{{ getStatusLabel(row.original.status) }}
+												</Badge>
+											</td>
+											<td class="table-td group/td py-3.5 px-4 text-center">
+												<span class="text-[10px] font-bold" :class="row.original.isPayed ? 'text-emerald-600' : 'text-amber-600'">
+													{{ row.original.isPayed ? 'Да' : 'Нет' }}
+												</span>
+											</td>
+											<td class="table-td group/td py-3.5 px-4 text-center">
+												<span class="text-xs text-slate-700">{{ row.original.productsCount || 0 }}</span>
+											</td>
+											<td class="table-td group/td py-3.5 px-4">
+												<div class="font-black text-slate-800">{{ formatCurrency(row.original.amount) }}</div>
+											</td>
+											<td class="table-td group/td py-3.5 px-4" @click.stop>
+												<div class="flex items-center justify-start gap-1.5">
+													<Button @click="viewInvoice(row.original)" isIcon class="p-2 shrink-0" title="Просмотр">
+														<svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+															<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/>
+															<circle cx="12" cy="12" r="3"/>
+														</svg>
+													</Button>
+												</div>
+											</td>
+										</tr>
+										<tr v-if="!isLoading && filteredRows.length === 0" class="table-tr group/tr border-y border-transparent border-b-gray-200 last:border-none dark:border-b-dark-500">
+											<td colspan="10" class="table-td group/td py-12 text-center text-slate-400">
+												Инвойсов по выбранным критериям не найдено
+											</td>
+										</tr>
+									</tbody>
+								</Table>
+							</div>
+							<div class="px-4 pb-4 sm:px-5 sm:pt-4 pt-4">
+								<div
+									v-if="table.getRowModel().rows.length"
+									class="p-4 sm:px-5"
+								>
+									<PaginationSection :table="table" />
+								</div>
+							</div>
+							<SelectedRowsActions :table="table" :height="theadHeight" />
+						</section>
+					</div>
+
+				</div>
+
+			</div>
+		</div>
+		<TransitionRoot appear :show="isDrawerOpen" as="template">
+			<Dialog as="div" class="mf-crm relative z-[100]" @close="closeDrawer">
+
+				<TransitionChild
+					class="mf-crm"
+					as="template"
+					enter="ease-out duration-300"
+					enter-from="opacity-0"
+					enter-to="opacity-100"
+					leave="ease-in duration-200"
+					leave-from="opacity-100"
+					leave-to="opacity-0"
+				>
+					<div class="fixed inset-0 bg-gray-900/50 backdrop-blur transition-opacity" />
+				</TransitionChild>
+
+				<TransitionChild
+					class="mf-crm"
+					as="template"
+					enter="ease-out transform-gpu transition-transform duration-200"
+					enter-from="translate-x-full"
+					enter-to="translate-x-0"
+					leave="ease-in transform-gpu transition-transform duration-200"
+					leave-from="translate-x-0"
+					leave-to="translate-x-full"
+				>
+					<DialogPanel class="fixed right-0 top-0 flex h-full w-full sm:w-96 transform-gpu flex-col bg-white shadow-xl overflow-y-auto">
+						<template v-if="selectedInvoice">
+
+							<!-- Хедер -->
+							<div class="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white z-10">
+								<div class="flex items-center gap-2">
+									<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 12h10"/><path d="M11 19h10"/><path d="M4 4h1v5"/><path d="M4 9h2"/><path d="M6.5 20H3.4c0-1 2.6-1.925 2.6-3.5a1.5 1.5 0 0 0-2.6-1.02"/></svg>
+									<h2 class="font-bold text-gray-800 text-base">Детализация покупки</h2>
+								</div>
+								<div class="flex items-center gap-2">
+									<Button unstyled class="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors" @click="downloadPDF(selectedInvoice)">
+										<svg fill="#000000" height="16" width="16" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+											<g><g><path d="M47.987,21.938c-0.006-0.091-0.023-0.178-0.053-0.264c-0.011-0.032-0.019-0.063-0.033-0.094c-0.048-0.104-0.109-0.202-0.193-0.285c-0.001-0.001-0.001-0.001-0.001-0.001L42,15.586V10c0-0.022-0.011-0.041-0.013-0.063c-0.006-0.088-0.023-0.173-0.051-0.257c-0.011-0.032-0.019-0.063-0.034-0.094c-0.049-0.106-0.11-0.207-0.196-0.293l-9-9c-0.086-0.086-0.187-0.148-0.294-0.197c-0.03-0.013-0.06-0.022-0.09-0.032c-0.086-0.03-0.174-0.047-0.264-0.053C32.038,0.01,32.02,0,32,0H7C6.448,0,6,0.448,6,1v14.586l-5.707,5.707c0,0-0.001,0.001-0.002,0.002c-0.084,0.084-0.144,0.182-0.192,0.285c-0.014,0.031-0.022,0.062-0.033,0.094c-0.03,0.086-0.048,0.173-0.053,0.264C0.011,21.96,0,21.978,0,22v19c0,0.552,0.448,1,1,1h5v5c0,0.552,0.448,1,1,1h34c0.552,0,1-0.448,1-1v-5h5c0.552,0,1-0.448,1-1V22C48,21.978,47.989,21.96,47.987,21.938z M44.586,21H42v-2.586L44.586,21z M38.586,9H33V3.414L38.586,9z M8,2h23v8c0,0.552,0.448,1,1,1h8v5v5H8v-5V2z M6,18.414V21H3.414L6,18.414z M40,46H8v-4h32V46z M46,40H2V23h5h34h5V40z"/><path d="M18.254,26.72c-0.323-0.277-0.688-0.473-1.097-0.586c-0.408-0.113-0.805-0.17-1.19-0.17h-3.332V38h2.006v-4.828h1.428c0.419,0,0.827-0.074,1.224-0.221c0.397-0.147,0.748-0.374,1.054-0.68c0.306-0.306,0.552-0.688,0.74-1.148c0.187-0.459,0.281-0.994,0.281-1.606c0-0.68-0.105-1.247-0.315-1.7C18.843,27.364,18.577,26.998,18.254,26.72z M16.971,31.005c-0.306,0.334-0.697,0.501-1.173,0.501h-1.156v-3.825h1.156c0.476,0,0.867,0.147,1.173,0.442c0.306,0.295,0.459,0.765,0.459,1.411C17.43,30.18,17.277,30.67,16.971,31.005z"/><polygon points="30.723,38 32.78,38 32.78,32.832 35.857,32.832 35.857,31.081 32.764,31.081 32.764,27.8 36.112,27.8 36.112,25.964 30.723,25.964"/><path d="M24.076,25.964H21.05V38h3.009c1.553,0,2.729-0.524,3.528-1.572c0.799-1.049,1.198-2.525,1.198-4.429c0-1.904-0.399-3.386-1.198-4.446C26.788,26.494,25.618,25.964,24.076,25.964z M26.55,33.843c-0.13,0.528-0.315,0.967-0.552,1.318c-0.238,0.351-0.521,0.615-0.85,0.79c-0.329,0.176-0.686,0.264-1.071,0.264h-0.969v-8.466h0.969c0.385,0,0.742,0.088,1.071,0.264c0.329,0.175,0.612,0.439,0.85,0.79c0.238,0.351,0.422,0.793,0.552,1.326s0.196,1.156,0.196,1.87C26.746,32.702,26.68,33.316,26.55,33.843z"/></g></g>
+										</svg>
+										PDF
+									</Button>
+									<Button @click="closeDrawer" variant="flat" is-icon class="size-6 rounded-full">
+										<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="size-4.5">
+											<path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+										</svg>
+									</Button>
+								</div>
+							</div>
+
+							<div class="p-5 flex flex-col gap-5">
+
+								<!-- Summary -->
+								<div class="flex items-center justify-between py-2">
+									<span class="text-sm font-medium text-slate-500">
+										Дата создания
+									</span>
+									<span class="text-sm font-semibold text-slate-800">
+										{{ formatDateTime(selectedInvoice.gmtimeAdd) }}
+									</span>
+								</div>
+
+								<div class="flex items-center justify-between py-2">
+									<span class="text-sm font-medium text-slate-500">
+										Клиент
+									</span>
+									<div class="text-right">
+										<div class="text-sm font-bold text-slate-800">
+											{{ (selectedInvoice.client || '-').split('<br/>')[0] }}
+										</div>
+										<div class="text-[10px] text-slate-400 font-mono mt-0.5">
+											{{ selectedInvoice.clientMeta || '' }}
+										</div>
+										<div
+											v-if="selectedInvoice.hyperId"
+											class="text-[10px] text-slate-400 font-mono mt-0.5"
+										>
+											карта: {{ selectedInvoice.hyperId }}
+										</div>
+									</div>
+								</div>
+
+								<div class="flex justify-between items-center p-4 bg-slate-50 border border-slate-200 rounded-xl shadow-inner">
+									<div class="flex flex-col gap-1">
+										<span class="text-[10px] font-bold text-slate-400 uppercase">Статус оплаты</span>
+										<Badge unstyled class="text-xs font-bold px-2 py-0.5 rounded border inline-block" :class="getStatusBadgeClass(selectedInvoice.status)">
+											{{ getStatusLabel(selectedInvoice.status) }}
+										</Badge>
+									</div>
+									<div class="text-right">
+										<span class="text-[10px] font-bold text-slate-400 uppercase">Итого</span>
+										<div class="text-2xl font-black text-slate-800 tracking-tight">{{ formatCurrency(selectedInvoice.amount?.value) }}</div>
+									</div>
+								</div>
+
+								<!-- Изменение статуса -->
+								<div class="flex items-center justify-between gap-2 p-3 bg-white border border-slate-200 rounded-xl">
+									<span class="text-xs font-semibold text-slate-600">Сменить статус:</span>
+									<div class="flex gap-2">
+										<Button 
+											v-if="selectedInvoice.status !== -1"
+											color="error" 
+											variant="soft" 
+											class="px-3 py-1 text-xs" 
+											@click="changeInvoiceStatus(selectedInvoice, -1)"
+										>
+											Отменить
+										</Button>
+										<Button 
+											v-if="selectedInvoice.status !== 12 && selectedInvoice.status !== -1"
+											color="primary" 
+											class="px-3 py-1 text-xs" 
+											@click="changeInvoiceStatus(selectedInvoice, 12)"
+										>
+											Доставили / Провести
+										</Button>
+									</div>
+								</div>
+
+								<!-- Состав заказа -->
+								<section>
+									<h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Состав заказа (Master-Data)</h3>
+									<div v-if="selectedInvoice.itemsLoading" class="text-xs text-slate-400 p-3 flex items-center gap-2">
+										<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+										Загрузка состава...
+									</div>
+									<div v-else-if="selectedInvoice.items && selectedInvoice.items.length" class="space-y-3">
+										<div
+											v-for="item in selectedInvoice.items"
+											:key="item.sku"
+											class="p-3 bg-white border border-slate-100 rounded-lg shadow-sm flex justify-between items-center hover:border-slate-200 transition-colors"
+										>
+											<div>
+												<div class="text-sm font-bold text-slate-800">{{ item.name }}</div>
+												<div class="text-[10px] font-mono text-slate-400 mt-1">
+													SKU: {{ item.sku || '—' }} • Кол-во: {{ item.qty }} шт.
+													<template v-if="item.qty > 1"> • {{ formatCurrency(item.unitPrice) }}/шт.</template>
+												</div>
+											</div>
+											<div class="text-sm font-black text-slate-800">{{ formatCurrency(item.price) }}</div>
+										</div>
+									</div>
+									<div v-else class="text-xs text-slate-400 p-3 bg-slate-50 rounded-lg border border-dashed border-slate-200">
+										Состав недоступен в ответе trade для этого инвойса
+									</div>
+								</section>
+
+								<!-- Financial Meta -->
+								<div class="grid grid-cols-2 gap-4 pt-4 border-t border-slate-100 text-xs font-medium text-slate-600">
+									<div>
+										<span class="text-slate-400">Способ оплаты:</span>
+										<div class="text-slate-800 font-bold mt-0.5">{{ selectedInvoice.paymentMethod }}</div>
+									</div>
+									<div>
+										<span class="text-slate-400">Реферальные начисления (MLM):</span>
+										<div class="text-blue-600 font-bold mt-0.5">+{{ selectedInvoice.mlmRewardPct }}% к структуре</div>
+									</div>
+								</div>
+
+								<!-- Возврат -->
+								<div v-if="selectedInvoice.status === 'Paid'" class="pt-4 border-t border-slate-100 flex flex-col gap-3">
+									<h4 class="flex items-center gap-1.5 text-xs font-bold text-red-500 uppercase tracking-widest">
+										<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+										Зона комплаенса возврата
+									</h4>
+									<p class="text-xs text-slate-500">Симуляция инициации возврата товара. При активации вебхука "return.created" бонусы MLM-структуры будут списаны.</p>
+									<Button
+										color="error"
+										variant="soft"
+										class="flex items-center justify-center gap-1.5 w-full border border-this-darker/40 dark:border-this-lighter/30"
+										@click="triggerRefundWebhook(selectedInvoice)"
+									>
+										<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.929 4.929 19.07 19.071"/></svg>
+										Инициировать возврат (Сторно MLM)
+									</Button>
+								</div>
+
+							</div>
+						</template>
+					</DialogPanel>
+				</TransitionChild>
+			</Dialog>
+		</TransitionRoot>
+
+		<InvoiceCreateModal
+			ref="invoiceCreateModal"
+			:mfModel="mfModel"
+			:warehouseOptions="warehouseOptions"
+			:statusOptions="statusOptions"
+			:deliveryMethods="deliveryMethodsRaw"
+			:offerTypeOptions="offerTypeOptions"
+			:formatCurrency="formatCurrency"
+			@create="handleCreateInvoice"
+		/>
+		<InvoiceReturnModal
+			ref="invoiceReturnModal"
+			:mfModel="mfModel"
+			:formatCurrency="formatCurrency"
+			@create="handleCreateReturnInvoice"
+		/>
+	</main>
+</template>
+
+<style lang="scss" scoped>
+.glass-panel {
+	background: rgba(255, 255, 255, 0.95);
+	backdrop-filter: blur(12px);
+	border: 1px solid rgba(226, 232, 240, 0.8);
+	box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+.crm-card {
+	background: white;
+	border: 1px solid #e2e8f0;
+	border-radius: 16px;
+	box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.01);
+}
+
+.glass-btn {
+	background: white;
+	border: 1px solid #e2e8f0;
+	border-radius: 10px;
+	font-weight: 600;
+	font-size: 13px;
+	padding: 8px 16px;
+	transition: all 0.2s;
+}
+.glass-btn:hover {
+	background: #f8fafc;
+	border-color: #cbd5e1;
+}
+
+.table-row-active {
+	background-color: #eff6ff;
+	border-left: 3px solid #3b82f6;
+}
+</style>
+
+<script>
+import FacetedFilter from 'io7/components/tailux/shared/table/FacedtedFilter.vue';
+import RangeFilter from 'io7/components/tailux/shared/table/RangeFilter.vue';
+import DateFilter from 'io7/components/tailux/shared/table/DateFilter.vue';
+import FilterSelector from 'io7/components/tailux/shared/table/FilterSelector.vue';
+import Badge from 'io7/components/tailux/ui/Badge.vue';
+import Button from 'io7/components/tailux/ui/Button.vue';
+import Table from 'io7/components/tailux/ui/Table.vue';
+import Input from 'io7/components/tailux/ui/form/Input.vue';
+import Checkbox from 'io7/components/tailux/ui/form/Checkbox.vue';
+import SelectedRowsActions from "io7/components/tailux/shared/table/SelectedRowsActions.vue";
+import PaginationSection from "io7/components/tailux/shared/table/PaginationSection.vue";
+import InvoiceCreateModal from '../components/pages/invoices/modals/InvoiceCreateModal.vue';
+import InvoiceReturnModal from '../components/pages/invoices/modals/InvoiceReturnModal.vue';
+import {
+	getCoreRowModel,
+	getFilteredRowModel,
+	getSortedRowModel,
+	getFacetedRowModel,
+	getFacetedUniqueValues,
+	useVueTable,
+	createColumnHelper,
+	getPaginationRowModel,
+} from '@tanstack/vue-table';
+import { rankItem } from '@tanstack/match-sorter-utils';
+import { TransitionRoot, TransitionChild, Dialog, DialogPanel } from '@headlessui/vue'
+
+const fuzzyFilter = (row, columnId, value, addMeta) => {
+	const itemRank = rankItem(row.getValue(columnId), value);
+	addMeta({ itemRank });
+	return itemRank.passed;
+};
+
+// Дискретный фильтр (чекбоксы) — под FacetedFilter. 1:1 с facetFilterFn из CustomersList.vue.
+const facetedFilter = (row, columnId, filterValue) => {
+	if (!filterValue) return true;
+	const { op, values } = filterValue;
+	const cell = row.getValue(columnId);
+	if (op === 'empty') return !cell;
+	if (op === 'notEmpty') return !!cell;
+	if (!values?.length) return true;
+	switch (op) {
+		case 'equals': return values.includes(cell);
+		case 'notEquals': return !values.includes(cell);
+		default: return values.includes(cell);
+	}
+};
+
+// Диапазонный фильтр (мин/макс, числа) — под RangeFilter. 1:1 с rangeFilterFn из CustomersList.vue.
+const rangeFilterFn = (row, columnId, filterValue) => {
+	if (!filterValue) return true;
+	const { op, min, max } = filterValue;
+	const raw = row.getValue(columnId);
+	const value = raw === '' || raw === null || raw === undefined ? null : Number(raw);
+	if (value === null) return false;
+
+	const minN = min !== '' && min !== undefined ? Number(min) : null;
+	const maxN = max !== '' && max !== undefined ? Number(max) : null;
+
+	switch (op) {
+		case 'equals': return minN !== null && value === minN;
+		case 'notEquals': return minN !== null && value !== minN;
+		case 'gt': return minN !== null && value > minN;
+		case 'gte': return minN !== null && value >= minN;
+		case 'lt': return minN !== null && value < minN;
+		case 'lte': return minN !== null && value <= minN;
+		case 'between':
+			if (minN !== null && value < minN) return false;
+			if (maxN !== null && value > maxN) return false;
+			return true;
+		default: return true;
+	}
+};
+
+// Фильтр по дате — под DateFilter. 1:1 с dateFilterFn из CustomersList.vue (там же пометка,
+// что сигнатура {op, value} / {op, from, to} — предположение по формату emit'а DateFilter.vue,
+// т.к. исходника компонента не было под рукой; если он другой — поправить тут).
+const dateFilterFn = (row, columnId, filterValue) => {
+	if (!filterValue) return true;
+	const { op, value, from, to } = filterValue;
+	const raw = row.getValue(columnId);
+	if (!raw) return op === 'empty';
+
+	const cellTime = new Date(raw).getTime();
+
+	switch (op) {
+		case 'empty': return false;
+		case 'notEmpty': return true;
+		case 'equals': return value ? new Date(raw).toDateString() === new Date(value).toDateString() : true;
+		case 'before': return value ? cellTime < new Date(value).getTime() : true;
+		case 'after': return value ? cellTime > new Date(value).getTime() : true;
+		case 'between': {
+			if (from && cellTime < new Date(from).getTime()) return false;
+			if (to && cellTime > new Date(to).getTime()) return false;
+			return true;
+		}
+		default: return true;
+	}
+};
+
+const columnHelper = createColumnHelper();
+
+// Метаданные select/number/date-полей invoices_struct — источник для FilterSelector
+// (:options="filterOptions") и для выбора виджета (isDateFilterField/isRangeFilterField
+// ниже). Текстовые ('input') поля сюда не входят — как и TEXT_TYPES в CustomersList,
+// они не участвуют в FilterSelector. Отдельного текстового инпута под них тоже нет:
+// InvoiceApi::buildFilter комбинирует все ключи через AND, а не OR, поэтому "один
+// инпут -> много полей сразу" физически не работает, пока на бэке не появится
+// честный OR по списку текстовых полей — поиск по ним не реализован в UI.
+const INVOICE_FILTER_FIELDS = {
+	invoice_number:   { type: 'number', label: 'Номер инвойса' },
+	ugmtimeAdd:       { type: 'date',   label: 'Дата создания' },
+	ugmtimeChange:    { type: 'date',   label: 'Дата изменения' },
+	dateSale:         { type: 'date',   label: 'Дата продажи' },
+	type:             { type: 'select', label: 'Тип' },
+	delivery_method:  { type: 'select', label: 'Способ доставки' },
+	warehouse_pkid:   { type: 'select', label: 'Склад' },
+	status:           { type: 'select', label: 'Статус' },
+	isPayed:          { type: 'select', label: 'Оплата' },
+	products_count:   { type: 'number', label: 'Кол-во товаров' },
+};
+
+// Колонки таблицы: покрывают все поля invoices_struct из trade (см. InvoiceApi::FILTERABLE_FIELDS).
+// select -> facetedFilter, number -> rangeFilterFn, date -> dateFilterFn — сама фильтрация
+// теперь идёт на сервере (manualFiltering: true), эти filterFn нужны только для того, чтобы
+// у колонки была валидная filterFn (того же требует TanStack Table) и для getFacetedUniqueValues.
+const columns = [
+	columnHelper.accessor('client',         { id: 'client',         filterFn: 'fuzzy' }),
+	columnHelper.accessor('id_str',         { id: 'id_str',         filterFn: 'fuzzy' }),
+	columnHelper.accessor('hyperId',        { id: 'hyperId',        filterFn: 'fuzzy' }),
+	columnHelper.accessor('status',         { id: 'status',         filterFn: facetedFilter }),
+	columnHelper.accessor('type',           { id: 'type',           filterFn: facetedFilter }),
+	columnHelper.accessor('isPayed',        { id: 'isPayed',        filterFn: facetedFilter }),
+	columnHelper.accessor('warehouse_pkid', { id: 'warehouse_pkid', filterFn: facetedFilter }),
+	columnHelper.accessor('delivery_method',{ id: 'delivery_method',filterFn: facetedFilter }),
+	columnHelper.accessor('id_str',         { id: 'invoice_number', filterFn: rangeFilterFn }),
+	columnHelper.accessor('productsCount',  { id: 'products_count', filterFn: rangeFilterFn }),
+	columnHelper.accessor('dateAdd',        { id: 'ugmtimeAdd',     filterFn: dateFilterFn }),
+	columnHelper.accessor('dateChange',     { id: 'ugmtimeChange',  filterFn: dateFilterFn }),
+	columnHelper.accessor('dateSale',       { id: 'dateSale',       filterFn: dateFilterFn }),
+];
+
+export default {
+	name: 'InvoicesListPage',
+
+	components: {
+		FacetedFilter,
+		RangeFilter,
+		DateFilter,
+		FilterSelector,
+		Badge,
+		Table,
+		Input,
+		Button,
+		Checkbox,
+		SelectedRowsActions,
+		PaginationSection,
+		TransitionRoot,
+		TransitionChild,
+		Dialog,
+		DialogPanel,
+		InvoiceCreateModal,
+		InvoiceReturnModal,
+	},
+
+	data() {
+		return {
+			isDrawerOpen: false,
+
+			invoicesData: [],
+
+			selectedInvoice: null,
+
+			filters: {
+				search: '',
+			},
+
+			// Фильтры, добавленные через FilterSelector (аналог toolbarFilters в
+			// CustomersList.vue) — держит порядок/набор выбранных полей select/number/date.
+			toolbarFilters: [],
+
+			globalFilter: '',
+			columnFilters: [],
+			sorting: [],
+			rowSelection: {},
+			theadHeight: 0,
+			table: null,
+			totalInvoices: 0,
+			isLoading: false,
+			// Статистика по текущему фильтру (crm.api.invoice.stat), зеркало
+			// loadStatMP() из invoices.html — считается на бэке по ВСЕЙ выборке,
+			// а не только по текущей странице (см. loadStats()/totalInvoicesSum).
+			statsData: null,
+
+			// enum типа приходит из ioEnum.invoices_types на стороне trade,
+			// в repo его нет — оставлен по факту из invoices.html (el.type:
+			// 0/1/2, см. строку ~561). statusOptions грузится динамически
+			// в loadReferenceData() из crm.api.enum.invoiceStatusLabels
+			// (EnumApi::INVOICE_STATUS_LABELS — зеркало ioEnum.invoices_statuses).
+			statusOptions: [],
+			// Опт/Розница — влияет на подбор offer'а товара, см.
+			// crm.api.enum.offerTypeLabels (EnumApi::OFFER_TYPE_LABELS).
+			offerTypeOptions: [],
+			typeOptions: [
+				{ label: 'Продажа',  value: 0 },
+				{ label: 'Возврат',  value: 1 },
+				{ label: 'Заказ',    value: 2 },
+			],
+			isPayedOptions: [
+				{ label: 'Оплачено',    value: true },
+				{ label: 'Не оплачено', value: false },
+			],
+			warehouseOptions: [],
+			deliveryMethodOptions: [],
+			// Полные объекты способов доставки (pkid/name/method/amount_value/step) —
+			// для FacetedFilter хватает deliveryMethodOptions {label, value} выше,
+			// а InvoiceCreateModal нужны сырые данные для авторасчёта amount_delivery.
+			deliveryMethodsRaw: [],
+
+			pagination: { pageIndex: 0, pageSize: 10 },
+		};
+	},
+
+	computed: {
+		companyPkid() {
+			return this.$store.state.io7.auth.selectedCabPkid;
+		},
+		filteredRows() {
+			return this.table ? this.table.getRowModel().rows : [];
+		},
+		// БЫЛО: считалось через filteredRows.reduce(...) — но при manualPagination
+		// filteredRows это только строки ТЕКУЩЕЙ страницы (до 10 шт.), а не весь
+		// набор, попадающий под фильтр. Из-за этого "Всего" в шапке на деле
+		// показывало сумму по странице. Берём готовую сумму с бэка (doStat),
+		// который считает её по всей выборке — см. loadStats().
+		totalInvoicesSum() {
+			return this.statsData?.invoices_sum ?? 0;
+		},
+		// Список полей для FilterSelector — 1:1 с INVOICE_FILTER_FIELDS
+		// (select/number/date из invoices_struct), см. filterOptions в CustomersList.vue.
+		filterOptions() {
+			return Object.entries(INVOICE_FILTER_FIELDS).map(([value, meta]) => ({
+				label: meta.label,
+				value,
+			}));
+		},
+	},
+
+	watch: {
+		'filters.search'(val) {
+			this.globalFilter = val;
+			clearTimeout(this._searchDebounce);
+			this._searchDebounce = setTimeout(() => {
+				this.pagination.pageIndex = 0;
+				this.loadInvoices();
+			}, 400);
+		},
+	},
+
+	async created() {
+		const self = this;
+
+		// Подтягиваем те же enum/справочники, что invoices.html грузит через
+		// ioEnum.invoices_types / ioEnum.invoices_statuses и *.getData для
+		// warehouses/deliveryMethods — нужны, чтобы FacetedFilter показывал
+		// человеко-читаемые лейблы, а не сырые коды/pkid.
+		this.loadReferenceData();
+
+		this.table = useVueTable({
+			get data() { return self.invoicesData; },
+			columns,
+			enableRowSelection: true,
+			// Фильтрация/пагинация теперь серверные (см. loadInvoices/buildServerFilter),
+			// как в CustomersList.vue — filterFn'ы на колонках нужны только для API
+			// TanStack Table, реальная фильтрация происходит через trade-запрос.
+			manualFiltering: true,
+			manualPagination: true,
+			get pageCount() {
+				return Math.ceil(self.totalInvoices / self.pagination.pageSize) || 1;
+			},
+			filterFns: { fuzzy: fuzzyFilter },
+			state: {
+				get globalFilter()  { return self.globalFilter; },
+				get columnFilters() { return self.columnFilters; },
+				get sorting()       { return self.sorting; },
+				get pagination()    { return self.pagination; },
+				get rowSelection()  { return self.rowSelection; },
+			},
+			onRowSelectionChange: (updater) => {
+				self.rowSelection = typeof updater === 'function' ? updater(self.rowSelection) : updater;
+			},
+			onGlobalFilterChange: (updater) => {
+				self.globalFilter = typeof updater === 'function' ? updater(self.globalFilter) : updater;
+			},
+			onColumnFiltersChange: (updater) => {
+				self.columnFilters = typeof updater === 'function' ? updater(self.columnFilters) : updater;
+				self.pagination.pageIndex = 0;
+				self.loadInvoices();
+			},
+			onSortingChange: (updater) => {
+				self.sorting = typeof updater === 'function' ? updater(self.sorting) : updater;
+				self.loadInvoices();
+			},
+			onPaginationChange: (updater) => {
+				self.pagination = typeof updater === 'function' ? updater(self.pagination) : updater;
+				self.loadInvoices();
+			},
+			globalFilterFn: fuzzyFilter,
+			getCoreRowModel: getCoreRowModel(),
+			getFilteredRowModel: getFilteredRowModel(),
+			getSortedRowModel: getSortedRowModel(),
+			getFacetedRowModel: getFacetedRowModel(),
+			getFacetedUniqueValues: getFacetedUniqueValues(),
+			getPaginationRowModel: getPaginationRowModel(),
+			// FilterSelector читает/пишет список активных полей через table.options.meta,
+			// см. шаблон (template v-for="filterKey in toolbarFilters") — 1:1 с CustomersList.vue.
+			meta: {
+				setToolbarFilters: (filters) => { self.toolbarFilters = filters; },
+				getToolbarFilters: () => self.toolbarFilters,
+			},
+		});
+
+		this.selectedInvoice = null;
+		this.loadInvoices();
+	},
+
+	mounted() {
+		this.resizeObserver = new ResizeObserver((entries) => {
+			for (const entry of entries) {
+				if (entry.target === this.$refs.theadRef) {
+					this.theadHeight = entry.contentRect.height;
+				}
+			}
+		});
+		if (this.$refs.theadRef) {
+			this.resizeObserver.observe(this.$refs.theadRef);
+		}
+	},
+
+	beforeUnmount() {
+		if (this.resizeObserver) {
+			this.resizeObserver.disconnect();
+		}
+	},
+
+	methods: {
+		// getFilterOptions/filterLabel/isDateFilterField/isRangeFilterField/rangeButtonText —
+		// обвязка для FilterSelector/DateFilter/RangeFilter/FacetedFilter, 1:1 по структуре
+		// с CustomersList.vue, но источник опций для select-полей — уже готовые
+		// typeOptions/statusOptions/isPayedOptions/warehouseOptions/deliveryMethodOptions
+		// (в CustomersList опции считались из уже загруженных строк, тут они из справочников).
+		getFilterOptions(key) {
+			switch (key) {
+				case 'type': return this.typeOptions;
+				case 'status': return this.statusOptions;
+				case 'isPayed': return this.isPayedOptions;
+				case 'warehouse_pkid': return this.warehouseOptions;
+				case 'delivery_method': return this.deliveryMethodOptions;
+				default: return [];
+			}
+		},
+
+		filterLabel(key) {
+			return INVOICE_FILTER_FIELDS[key]?.label || key;
+		},
+
+		isDateFilterField(key) {
+			return INVOICE_FILTER_FIELDS[key]?.type === 'date';
+		},
+
+		isRangeFilterField(key) {
+			return INVOICE_FILTER_FIELDS[key]?.type === 'number';
+		},
+
+		rangeButtonText(key) {
+			return ({ min, max }) =>
+				`${min ? 'От ' + min : ''}` +
+				`${min && max ? ' — ' : ''}` +
+				`${max ? 'До ' + max : ''}`;
+		},
+
+		// Справочники для лейблов FacetedFilter — те же источники, что и в
+		// invoices.html (ioEnum.invoices_types/statuses, warehouses.getData,
+		// deliveryMethods.getData). Если каких-то методов ещё нет на фронте —
+		// фильтр просто останется пустым списком опций, без падения страницы.
+		// Статусы — с бэка, по тому же паттерну, что statusLabels в
+		// Leads.vue/Orders.vue/Deals.vue (crm.api.enum.invoiceStatusLabels ->
+		// EnumApi::INVOICE_STATUS_LABELS, зеркало $ioEnum['invoices_statuses']
+		// из trade). Тип инвойса (продажа/возврат/заказ) в EnumApi не заведён —
+		// это не статус, а поле 'type' из invoices_struct, коды видны прямо в
+		// invoices.html (el.type == 0 ? 'dollar' : (1 ? 'reply' : 'shopping-cart')),
+		// поэтому оставлен как локальная константа в data().
+		async loadReferenceData() {
+			try {
+				const statusData = await this.mfModel.getInvoiceStatusLabels();
+				if (statusData.error_code === 1) {
+					this.statusOptions = Object.entries(statusData.statusLabels || {}).map(([value, label]) => ({
+						label,
+						value: Number(value),
+					}));
+				}
+			} catch (e) {
+				console.error('Не удалось загрузить invoiceStatusLabels', e);
+			}
+
+			try {
+				const offerTypeData = await this.mfModel.getOfferTypeLabels();
+				if (offerTypeData.error_code === 1) {
+					this.offerTypeOptions = Object.entries(offerTypeData.offerTypeLabels || {}).map(([value, label]) => ({
+						label,
+						value: Number(value),
+					}));
+				}
+			} catch (e) {
+				console.error('Не удалось загрузить offerTypeLabels', e);
+			}
+
+			try {
+				if (this.mfModel.getWarehouses) {
+					const wh = await this.mfModel.getWarehouses(this.companyPkid);
+					this.warehouseOptions = (wh?.items || wh?.data || []).map((w) => ({
+						label: w.name,
+						value: w.pkid,
+					}));
+				}
+			} catch (e) {
+				console.error('Не удалось загрузить список складов', e);
+			}
+
+			try {
+				if (this.mfModel.getDeliveryMethods) {
+					const dm = await this.mfModel.getDeliveryMethods(this.companyPkid);
+					const dmItems = dm?.items || dm?.data || [];
+					this.deliveryMethodOptions = dmItems.map((m) => ({ label: m.name, value: m.pkid }));
+					this.deliveryMethodsRaw = dmItems;
+				}
+			} catch (e) {
+				console.error('Не удалось загрузить способы доставки', e);
+			}
+		},
+
+		// Переводит columnFilters (то, что накопил FilterSelector/FacetedFilter/RangeFilter/
+		// DateFilter) в trade-формат filter'а с операторами перед именем поля — тот же
+		// формат, что уже понимает InvoiceApi::buildFilter (ltrim по '=!%<>~').
+		// ВАЖНО: op-словарь ('gt'/'gte'/'lt'/'lte'/'between'/'before'/'after'/'equals'/
+		// 'empty'/'notEmpty') — предположение по аналогии с rangeFilterFn/dateFilterFn
+		// в CustomersList.vue, т.к. исходники RangeFilter.vue/DateFilter.vue не смотрел;
+		// если они эмитят другую форму — поправить здесь.
+		columnFiltersToServerFilter() {
+			const filter = {};
+			this.columnFilters.forEach(({ id, value }) => {
+				if (!value) return;
+				const meta = INVOICE_FILTER_FIELDS[id];
+				if (!meta) return;
+
+				if (meta.type === 'select') {
+					const { op, values } = value;
+					if (op === 'empty') { filter['=' + id] = null; return; }
+					if (op === 'notEmpty') { filter['!' + id] = null; return; }
+					if (!values?.length) return;
+					filter[(op === 'notEquals' ? '!' : '=') + id] = values.length === 1 ? values[0] : values;
+				} else if (meta.type === 'number') {
+					const { op, min, max } = value;
+					if (op === 'between') {
+						if (min !== '' && min != null) filter['>' + id] = min;
+						if (max !== '' && max != null) filter['<' + id] = max;
+					} else if (op === 'gt' || op === 'gte') {
+						filter['>' + id] = min;
+					} else if (op === 'lt' || op === 'lte') {
+						filter['<' + id] = min;
+					} else if (op === 'equals') {
+						filter['=' + id] = min;
+					}
+				} else if (meta.type === 'date') {
+					const { op, value: v, from, to } = value;
+					if (op === 'between') {
+						if (from) filter['>' + id] = from;
+						if (to) filter['<' + id] = to;
+					} else if (op === 'before') {
+						filter['<' + id] = v;
+					} else if (op === 'after') {
+						filter['>' + id] = v;
+					} else if (op === 'equals') {
+						filter['=' + id] = v;
+					}
+				}
+			});
+			return filter;
+		},
+
+		// Собирает серверный filter для InvoiceApi::doSearch/buildFilter: company_pkid +
+		// select/number/date из columnFilters (columnFiltersToServerFilter()). Текст из
+		// filters.search сюда НЕ входит — он уходит отдельным параметром 'search' в
+		// loadInvoices() (trade сам разбирает %text/pkid: — см. invoices.html). Класть его
+		// же дополнительно в filter['%picker_login'] и т.п. нельзя: buildFilter в
+		// InvoiceApi.php комбинирует все ключи через AND, и запись одновременно
+		// потребовала бы совпадения текста *и* в %text-совпадении, *и* во всех этих полях
+		// сразу — результат почти всегда пустой. Пока в InvoiceApi/trade не появится
+		// нормальный OR по списку текстовых полей, единый инпут физически может быть
+		// только один канал поиска — используем встроенный %text/pkid:.
+		buildServerFilter() {
+			const filter = { company_pkid: this.companyPkid };
+			Object.assign(filter, this.columnFiltersToServerFilter());
+			return filter;
+		},
+
+		// Реальный вызов на бэк App\Api\InvoiceApi::doSearch
+		// (см. mfModel.getInvoices -> entity crm.api.invoice.search).
+		async loadInvoices() {
+			this.isLoading = true;
+			try {
+				const data = await this.mfModel.getInvoices(
+					this.buildServerFilter(),
+					this.pagination.pageIndex * this.pagination.pageSize,
+					this.pagination.pageSize,
+					this.filters.search,
+				);
+				if (data.error_code === 1) {
+					this.invoicesData = (data.items || []).map(this.mapInvoiceFromApi);
+					this.totalInvoices = data.total ?? data.count ?? this.invoicesData.length;
+					if (this.invoicesData.length) {
+						this.selectedInvoice = this.invoicesData[0];
+					}
+				} else {
+					this.$noty.error(data.error_str || 'Ошибка загрузки инвойсов', { layout: 'bottomRight', timeout: 3000 });
+				}
+			} catch (e) {
+				console.error(e);
+				this.$noty.error('Ошибка сети', { layout: 'bottomRight', timeout: 3000 });
+			} finally {
+				this.isLoading = false;
+			}
+			// Статистика (count/sum по всей выборке) грузится тем же фильтром,
+			// но отдельным запросом — не блокируем строки таблицы её ожиданием.
+			this.loadStats();
+		},
+
+		// crm.api.invoice.stat — считает count/sum по ВСЕЙ выборке под текущим
+		// фильтром (а не по одной странице), см. InvoiceApi::doStat.
+		async loadStats() {
+			try {
+				const data = await this.mfModel.getInvoicesStat(this.buildServerFilter());
+				if (data.error_code === 1) {
+					this.statsData = data;
+					// count с doStat считается по тому же фильтру, что и doSearch,
+					// так что используем его как более точный источник "Найдено" —
+					// data.total из getInvoices тоже верный, но держим оба в синхроне.
+					if (data.invoices_count != null) {
+						this.totalInvoices = data.invoices_count;
+					}
+				}
+			} catch (e) {
+				console.error(e);
+			}
+		},
+
+		// Сырые поля из trade (bmc.trade2.model.invoices2.getDataMore, см.
+		// InvoiceApi::doSearch -> data) приводим к виду, понятному таблице.
+		// Полный набор полей — 1:1 с invoices_struct/FILTERABLE_FIELDS, плюс
+		// служебные поля из самого шаблона строки (warehousesoptions[...],
+		// amount_paid.value, client_cardnum) — см. invoices.html, строки 564-588.
+		mapInvoiceFromApi(el) {
+			// trade отдаёт client уже как HTML-строку вида "Имя<br/>(логин: X, id:Y)"
+			// (легаси-формат под |raw в invoices.html). При обычной {{ }}-интерполяции
+			// Vue экранирует теги, и на экране видна сырая разметка — см. скрин.
+			// Разбираем на "имя" + "мета" и рендерим двумя строками без v-html
+			// (v-html сюда ставить не стоит: client приходит от trade, а не от
+			// доверенного источника на фронте).
+			const clientRaw = el.client || '';
+			const clientBrIdx = clientRaw.search(/<br\s*\/?>/i);
+			const clientName = (clientBrIdx >= 0 ? clientRaw.slice(0, clientBrIdx) : clientRaw)
+				.replace(/<[^>]+>/g, '')
+				.trim();
+			const clientMeta = (clientBrIdx >= 0 ? clientRaw.slice(clientBrIdx).replace(/<br\s*\/?>/i, '') : '')
+				.replace(/<[^>]+>/g, '')
+				.trim();
+			return {
+				id: el.pkid,
+				pkid: el.pkid,
+				id_str: el.invoice_number || el.pkid,
+				client: clientName,
+				clientMeta,
+				hyperId: el.client_cardnum || '',
+				clientPkid: el.client_pkid || null,
+				date: el.ugmtimeAdd || el.dateSale || '',
+				dateAdd: el.ugmtimeAdd || '',
+				dateChange: el.ugmtimeChange || '',
+				dateSale: el.dateSale || '',
+				amount: (el.amount_paid && el.amount_paid.value) || el.amount_paid || 0,
+				status: Number(el.status),
+				isPayed: !!el.isPayed,
+				type: el.type,
+				warehouse: el.warehouse_name || (this.warehouseOptions.find((w) => w.value === el.warehouse_pkid)?.label) || '',
+				warehouse_pkid: el.warehouse_pkid,
+				delivery_method: el.delivery_method,
+				deliveryInfo: el.delivery_info || '',
+				productsCount: el.products_count || 0,
+				pickerLogin: el.picker_login || '',
+				refererLogin: el.referer_login || '',
+				consultantLogin: el.consultant_login || '',
+				cashierLogin: el.cashier_login || '',
+				creatorLogin: el.creator_login || '',
+				paymentsCount: el.payments_count || 0,
+				paymentMethod: '',
+				mlmRewardPct: 0,
+				items: this.groupInvoiceProducts(el.products || []),
+			};
+		},
+
+		// invoicedata.products в trade — массив ФИЗИЧЕСКИХ ЕДИНИЦ товара (у каждой свой
+		// QR-код: qr_code_creator_number/qr_code_serial_number), а не строк заказа с
+		// количеством — см. invoices.html, рендер invoice-product-row (~строка 12528):
+		// $.each(invoicedata.products||[], function(i, product){...}). Поэтому один и тот
+		// же tid встречается несколько раз отдельными записями. Тут группируем по tid,
+		// чтобы получить нормальную строку состава: имя (product.offer_name — не tid и не
+		// 'name', этого поля в trade нет), кол-во единиц, цена за единицу с учётом скидки
+		// (product.amount.value минус product.discount%, см. invoices.html ~12691-12693)
+		// и сумму по позиции.
+		groupInvoiceProducts(products) {
+			const map = new Map();
+			products.forEach((p) => {
+				const key = p.tid || p.offer_name;
+				const unitAmount = (p.amount && p.amount.value) || 0;
+				const discountPct = Number(p.discount) || 0;
+				const unitPrice = Math.round(unitAmount - (unitAmount / 100) * discountPct);
+
+				if (!map.has(key)) {
+					map.set(key, {
+						sku: p.tid || '',
+						name: p.offer_name || p.tid || '—',
+						qty: 0,
+						unitPrice,
+						price: 0,
+					});
+				}
+				const entry = map.get(key);
+				entry.qty += 1;
+				entry.price += unitPrice;
+			});
+			return Array.from(map.values());
+		},
+
+		// Создание инвойса — раздел был "только чтение (SST)", но своего API
+		// создания в InvoiceApi.php нет и заводить не стали: вызываем trade
+		// напрямую тем же способом, что getWarehouses/getDeliveryMethods
+		// (mfModel.createInvoiceOrder -> bmc.trade2.model.invoices2.addOrder).
+		// error_code трактуем максимально широко (1 = успех) — конкретные
+		// отрицательные коды ошибок из legacy (-1000001 и т.п.) здесь не
+		// разобраны за неимением бэкенда trade под рукой, см. общий catch.
+		async handleCreateInvoice(payload, { done, finish } = {}) {
+			const { docType, ...rest } = payload;
+			const isSale = docType === 'sale';
+			try {
+				const data = isSale
+					? await this.mfModel.createInvoiceSale(rest)
+					: await this.mfModel.createInvoiceOrder(rest);
+				if (data.error_code === 1) {
+					this.$noty.success(isSale ? 'Продажа успешно создана' : 'Заказ успешно создан', { layout: 'bottomRight', timeout: 3000 });
+					finish?.();
+					this.pagination.pageIndex = 0;
+					this.loadInvoices();
+				} else {
+					this.$noty.error(data.error_str || 'Не удалось создать инвойс', { layout: 'bottomRight', timeout: 4000 });
+					done?.();
+				}
+			} catch (e) {
+				console.error(e);
+				this.$noty.error('Ошибка сети при создании инвойса', { layout: 'bottomRight', timeout: 3000 });
+				done?.();
+			}
+		},
+
+		// Оформление возврата — зеркало invoiceReturnShowAdd()/createInvoiceReturn()
+		// из invoices.html (кнопка .invoice-return-add-btn), см. InvoiceReturnModal.vue.
+		async handleCreateReturnInvoice(payload, { done, finish } = {}) {
+			try {
+				const data = await this.mfModel.createInvoiceReturn(payload);
+				if (data.error_code === 1) {
+					this.$noty.success('Возврат успешно оформлен', { layout: 'bottomRight', timeout: 3000 });
+					finish?.();
+					this.pagination.pageIndex = 0;
+					this.loadInvoices();
+				} else {
+					this.$noty.error(data.error_str || 'Не удалось оформить возврат', { layout: 'bottomRight', timeout: 4000 });
+					done?.();
+				}
+			} catch (e) {
+				console.error(e);
+				this.$noty.error('Ошибка сети при оформлении возврата', { layout: 'bottomRight', timeout: 3000 });
+				done?.();
+			}
+		},
+
+		// Список из doSearch не содержит products (только сводный productsCount),
+		// поэтому при открытии карточки инвойса дотягиваем полный состав отдельным
+		// запросом (см. InvoiceApi::doDetails/mfModel.getInvoiceDetails) и группируем
+		// его через groupInvoiceProducts. itemsLoading — чтобы в шаблоне показать
+		// "Загрузка..." вместо пустого "Состав недоступен" на время запроса.
+		async openDrawer(inv) {
+			this.selectedInvoice = { ...inv, itemsLoading: true };
+			this.isDrawerOpen = true;
+
+			try {
+				const data = await this.mfModel.getInvoiceDetails(inv.pkid, this.companyPkid);
+				if (data.error_code === 1 && data.item) {
+					const items = this.groupInvoiceProducts(data.item.products || []);
+					// пользователь мог успеть закрыть/переключить карточку, пока шёл запрос
+					if (this.selectedInvoice && this.selectedInvoice.pkid === inv.pkid) {
+						this.selectedInvoice = { ...this.selectedInvoice,...data.item, items, itemsLoading: false };
+					}
+				} else if (this.selectedInvoice && this.selectedInvoice.pkid === inv.pkid) {
+					this.selectedInvoice.itemsLoading = false;
+				}
+			} catch (e) {
+				console.error('Не удалось загрузить состав инвойса', e);
+				if (this.selectedInvoice && this.selectedInvoice.pkid === inv.pkid) {
+					this.selectedInvoice.itemsLoading = false;
+				}
+			}
+		},
+		closeDrawer() {
+			this.isDrawerOpen = false
+		},
+		selectInvoice(inv) {
+			this.selectedInvoice = inv;
+		},
+
+		// status — код из EnumApi::INVOICE_STATUS_LABELS (зеркало
+		// ioEnum.invoices_statuses в trade): -1 отмена, 0..11 — в работе,
+		// 12 — доставлен (финал), 101/102 — ветка возврата.
+		getStatusBadgeClass(status) {
+			status = Number(status);
+			if (status === -1) return 'bg-red-50 text-red-700 border-red-200';
+			if (status === 12) return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+			if (status === 101 || status === 102) return 'bg-slate-50 text-slate-500 border-slate-200';
+			return 'bg-blue-50 text-blue-700 border-blue-200';
+		},
+
+		getStatusLabel(status) {
+			// status от trade может прийти и числом, и строкой ("0") — сравниваем
+			// приведя оба к Number, иначе Badge молча падает в fallback (сырой код).
+			const found = this.statusOptions.find((o) => Number(o.value) === Number(status));
+			return found ? found.label : (status ?? '-');
+		},
+
+		getTypeLabel(type) {
+			const found = this.typeOptions.find((o) => o.value === type);
+			return found ? found.label : (type ?? '-');
+		},
+
+		formatCurrency(val) {
+			return new Intl.NumberFormat('ru-RU').format(val) + ' ₸';
+		},
+
+		resetFilters() {
+			this.filters.search = '';
+			this.globalFilter = '';
+			this.columnFilters = [];
+			this.toolbarFilters = [];
+			if (this.table) {
+				this.table.resetColumnFilters();
+			}
+			this.pagination.pageIndex = 0;
+			this.loadInvoices();
+			this.$noty.info('Фильтры сброшены. Отображаются все фискальные документы.', {
+				layout: 'bottomRight',
+				timeout: 3000
+			});
+		},
+
+		downloadPDF(inv) {
+			this.$noty.success(`PDF инвойса #${inv.id_str} успешно сгенерирован и скачивается.`, {
+				layout: 'bottomRight',
+				timeout: 3000
+			});
+		},
+
+		async changeInvoiceStatus(inv, newStatus) {
+			try {
+				const res = await this.mfModel.changeInvoiceStatus({
+					pkid: inv?.pkid,
+					company_pkid: this.companyPkid,
+					status: newStatus,
+				});
+
+				if (res && (res.error_code === 1 || res.error_code === 0)) {
+					inv.status = newStatus;
+					this.$noty.success('Статус инвойса успешно изменён', { layout: 'bottomRight', timeout: 3000 });
+					this.loadInvoices();
+				} else {
+					const errorMsg = res?.error_str || 'Не удалось изменить статус инвойса';
+					this.$noty.error(errorMsg, { layout: 'bottomRight', timeout: 3000 });
+				}
+			} catch (e) {
+				this.$noty.error('Произошла ошибка при изменении статуса', { layout: 'bottomRight', timeout: 3000 });
+			}
+		},
+
+		triggerRefundWebhook(inv) {
+			inv.status = 'Refunded';
+			this.$noty.error(`По инвойсу #${inv.id_str} оформлен возврат. С реферальной сети списано MLM вознаграждение, XP-очки надомных мастеров заморожены.`, {
+				layout: 'bottomRight',
+				timeout: 3000
+			});
+		},
+		
+		viewInvoice(inv) {
+			localStorage.setItem('selectedInvoice', JSON.stringify(inv));
+			this.$router.push({
+				name: 'crm-invoice-details',
+				params: { id: inv.id },
+			});
+		},
+
+		formatDateTime(value) {
+			if (!value) {
+				return '—';
+			}
+
+			const date = new Date(value);
+
+			if (isNaN(date.getTime())) {
+				return '—';
+			}
+
+			const pad = (number) => String(number).padStart(2, '0');
+
+			return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+		},
+	},
+};
+</script>
