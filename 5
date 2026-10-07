@@ -335,26 +335,35 @@
 									</div>
 								</div>
 
-								<!-- Изменение статуса -->
-								<div class="flex items-center justify-between gap-2 p-3 bg-white border border-slate-200 rounded-xl">
-									<span class="text-xs font-semibold text-slate-600">Сменить статус:</span>
-									<div class="flex gap-2">
-										<Button 
-											v-if="selectedInvoice.status !== -1"
-											color="error" 
-											variant="soft" 
-											class="px-3 py-1 text-xs" 
-											@click="changeInvoiceStatus(selectedInvoice, -1)"
+								<!-- Редактирование статуса -->
+								<div
+									v-if="selectedInvoice && selectedInvoice.status !== -1"
+									class="p-3 bg-white border border-slate-200 rounded-xl"
+								>
+									<div class="flex items-center gap-3">
+										<span class="text-xs font-semibold text-slate-600 whitespace-nowrap">
+											Статус:
+										</span>
+
+										<select
+											v-model="editStatus"
+											class="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
 										>
-											Отменить
-										</Button>
-										<Button 
-											v-if="selectedInvoice.status !== 12 && selectedInvoice.status !== -1"
-											color="primary" 
-											class="px-3 py-1 text-xs" 
-											@click="changeInvoiceStatus(selectedInvoice, 12)"
+											<option
+												v-for="option in statusOptions"
+												:key="option.value"
+												:value="option.value"
+											>
+												{{ option.label }}
+											</option>
+										</select>
+
+										<Button
+											color="primary"
+											class="px-3 py-2 text-xs"
+											@click="console.log('BUTTON CLICK')"
 										>
-											Доставили / Провести
+											Сохранить
 										</Button>
 									</div>
 								</div>
@@ -650,6 +659,8 @@ export default {
 			invoicesData: [],
 
 			selectedInvoice: null,
+			editStatus: null,
+			isSavingInvoice: false,
 
 			filters: {
 				search: '',
@@ -1178,6 +1189,7 @@ export default {
 		// "Загрузка..." вместо пустого "Состав недоступен" на время запроса.
 		async openDrawer(inv) {
 			this.selectedInvoice = { ...inv, itemsLoading: true };
+			this.editStatus = Number(inv.status);
 			this.isDrawerOpen = true;
 
 			try {
@@ -1307,6 +1319,56 @@ export default {
 
 			return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 		},
+	},
+
+	async saveInvoiceStatus() {
+		if (!this.selectedInvoice || this.editStatus === null) {
+			return;
+		}
+
+		this.isSavingInvoice = true;
+
+		try {
+			const res = await this.mfModel.editInvoice({
+				pkid: this.selectedInvoice.pkid,
+				company_pkid: this.companyPkid,
+				status: Number(this.editStatus),
+			});
+
+			if (res?.error_code === 1 || res?.error_code === 0) {
+				this.selectedInvoice.status = Number(this.editStatus);
+
+				this.$noty.success(
+					'Статус инвойса успешно изменён',
+					{
+						layout: 'bottomRight',
+						timeout: 3000,
+					}
+				);
+
+				await this.loadInvoices();
+			} else {
+				this.$noty.error(
+					res?.error_str || 'Не удалось сохранить статус',
+					{
+						layout: 'bottomRight',
+						timeout: 3000,
+					}
+				);
+			}
+		} catch (e) {
+			console.error('Ошибка сохранения статуса:', e);
+
+			this.$noty.error(
+				'Произошла ошибка при сохранении статуса',
+				{
+					layout: 'bottomRight',
+					timeout: 3000,
+				}
+			);
+		} finally {
+			this.isSavingInvoice = false;
+		}
 	},
 };
 </script>
