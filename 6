@@ -1,0 +1,1461 @@
+import axios from "axios";
+import dayjs from "io7/dayjs";
+import i18n from "@/i18n";
+
+export default class MfModel {
+	constructor() {
+		this.companyId = null;
+		
+		this.i18n = i18n;
+		dayjs.locale('ru');
+	}
+	
+	/**
+	 * Set app lang
+	 */
+	setLang(lang) {
+		// Установка для i18n
+		this.i18n.global.locale = lang;
+		
+		// Установка для Day.js (глобально)
+		dayjs.locale(lang); 
+	
+		// Остальное
+		axios.defaults.headers.common["Accept-Language"] = lang;
+		document.querySelector("html").setAttribute("lang", lang);
+		return lang;
+	}
+	
+	async getRoles(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.role.search",
+			params: {
+				filter,
+			},
+		});
+		return response;
+	}
+
+	async getRoleByPkid(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.role.getByID',
+			params: { pkid },
+		});
+		return response;
+	}
+	
+	async createRole(item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.role.create",
+			params: {
+				item,
+			},
+		});
+		return response;
+	}
+	
+	async updateRole(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.role.save",
+			params: {
+				pkid,
+				item,
+			},
+		});
+		return response;
+	}
+	
+	async deleteRole(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.role.delete",
+			params: {
+				pkid,
+			},
+		});
+		return response;
+	}
+	
+	async getPermissionsByRole(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.rolePermission.search",
+			params: {
+				filter,
+			},
+		});
+		return response;
+	}
+
+	async saveRolePermissionsMatrix(params) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.rolePermission.saveMatrix",
+			params,
+		});
+		return response;
+	}
+
+	async getEmployees(params) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.role.getEmployees",
+			params,
+		});
+		return response;
+	}
+
+	async getUserRoles(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.userRole.search",
+			params: { filter },
+		});
+		return response;
+	}
+
+	async getUsersByRole(companyPkid, rolePkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.userRole.getUsersByRole',
+			params: { company_pkid: companyPkid, role_pkid: rolePkid },
+		});
+		return response;
+	}
+
+	async assignUsersToRole(params) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.userRole.assignUsers",
+			params,
+		});
+		return response;
+	}
+	
+	async unassignUsersFromRole(params) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.userRole.unassignUsers",
+			params,
+		});
+		return response;
+	}
+
+	async getClientBases(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBase.search",
+			params: {
+				filter,
+				order: { pkid: 'desc' }
+			},
+		});
+		return response;
+	}
+
+	async getClientBasesReport(companyPkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBase.getReport",
+			params: {
+				company_pkid: companyPkid,
+			},
+		});
+		return response;
+	}
+
+	async importClientBases(companyPkid, file, onUploadProgress) {
+		const formData = new FormData();
+
+		formData.append('file', file);
+
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.clientBase.import',
+			params: {
+				company_pkid: companyPkid,
+			},
+			form: formData,
+			onUploadProgress,
+		});
+
+		return response;
+	}
+
+	async getClientBaseByPkid(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBase.getByID",
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async createClientBase(item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBase.create",
+			params: {
+				item,
+			},
+		});
+		return response;
+	}
+
+	async updateClientBase(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBase.save",
+			params: {
+				pkid,
+				item,
+			},
+		});
+		return response;
+	}
+
+	async deleteClientBase(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBase.delete",
+			params: {
+				pkid,
+			},
+		});
+		return response;
+	}
+
+	async getClientBasePermissions(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBasePermissions.search",
+			params: { filter },
+		});
+		return response;
+	}
+
+	async assignRolesToBase(params) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBasePermissions.assignRoles",
+			params,
+		});
+		return response;
+	}
+
+	async unassignRolesFromBase(params) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBasePermissions.unassignRoles",
+			params,
+		});
+		return response;
+	}
+
+	async getAccessibleClientBaseIds(params) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBase.getAccessibleBaseIds",
+			params,
+		});
+		return response;
+	}
+
+	async getClientBaseFields(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBaseFields.search",
+			params: { filter },
+		});
+		return response;
+	}
+
+	async createClientBaseField(item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBaseFields.create",
+			params: { item },
+		});
+		return response;
+	}
+
+	async updateClientBaseField(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBaseFields.save",
+			params: { pkid, item },
+		});
+		return response;
+	}
+
+	async deleteClientBaseField(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientBaseFields.delete",
+			params: { pkid },
+		});
+		return response;
+	}
+
+	// ---- Справочники (Dictionaries) ----
+
+	// limit по умолчанию высокий — список справочников используется целиком
+	// (клиентская фильтрация/пагинация нет пока на этой странице, но лучше
+	// не упираться в дефолтные 25, как это было с getDictionaryValues).
+	async getDictionaries(filter = {}, start = 0, limit = 1000) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.dictionary.search",
+			params: { filter, start, limit },
+		});
+		return response;
+	}
+
+	async createDictionary(item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.dictionary.create",
+			params: { item },
+		});
+		return response;
+	}
+
+	async updateDictionary(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.dictionary.save",
+			params: { pkid, item },
+		});
+		return response;
+	}
+
+	async deleteDictionary(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.dictionary.delete",
+			params: { pkid },
+		});
+		return response;
+	}
+
+	// limit по умолчанию высокий (не 25, как у большинства *.search) — эта
+	// ручка используется для клиентской пагинации/поиска в
+	// DictionaryValuesModal.vue (через tanstack table в браузере), поэтому
+	// нужен весь набор значений справочника одним запросом, а не страница.
+	async getDictionaryValues(filter = {}, start = 0, limit = 1000, search = '', order = null) {
+		const params = { filter, start, limit };
+		if (search) params.search = search;
+		params.order = order || { sortOrder: 'asc' };
+
+		const response = await lib.ioCallAction({
+			entity: "crm.api.dictionaryValue.search",
+			params,
+		});
+		return response;
+	}
+
+	async createDictionaryValue(item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.dictionaryValue.create",
+			params: { item },
+		});
+		return response;
+	}
+
+	async updateDictionaryValue(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.dictionaryValue.save",
+			params: { pkid, item },
+		});
+		return response;
+	}
+
+	async deleteDictionaryValue(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.dictionaryValue.delete",
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async reorderDictionaryValues(pkids) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.dictionaryValue.reorder",
+			params: { pkids },
+		});
+		return response;
+	}
+
+
+	async getContactProfile(params) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.contact.getProfile',
+			params,
+		});
+		return response;
+	}
+
+	async getContactAuditLogs(params) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.contact.getAuditLogs',
+			params,
+		});
+		return response;
+	}
+
+	async searchContactsAcrossBases(params) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.contact.searchAcrossBases',
+			params,
+		});
+		return response; // { error_code, error_str, items, total }
+	}
+
+	async getContactByPkid(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.contact.getByID',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async getClients(filter = {}, start = 0, limit = 50, search = '', order = null) {
+		const params = { filter, start, limit };
+		if (search) params.search = search;
+		params.order = order || { pkid: 'desc' };
+
+		const response = await lib.ioCallAction({
+			entity: "crm.api.client.search",
+			params,
+		});
+		return response;
+	}
+
+	async getClientByPkid(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.client.getByID",
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async createClient(item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.client.create",
+			params: { item },
+		});
+		return response;
+	}
+
+	async updateClient(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.client.save",
+			params: { pkid, item },
+		});
+		return response;
+	}
+
+	async deleteClient(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.client.delete",
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async getClientFieldValues(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientFieldValues.search",
+			params: { filter },
+		});
+		return response;
+	}
+
+	async saveClientFieldValues(companyPkid, clientPkid, values) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientFieldValues.saveForClient",
+			params: {
+				company_pkid: companyPkid,
+				client_pkid: clientPkid,
+				values,
+			},
+		});
+		return response;
+	}
+
+	async deleteClientFieldValue(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.clientFieldValues.delete",
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async findUserByLogin(login) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.client.findUserByLogin",
+			params: { login },
+		});
+		return response;
+	}
+
+	async getFunnels(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.funnel.search",
+			params: { filter, order: { pkid: 'asc' } },
+		});
+		return response;
+	}
+
+	async getFunnelByPkid(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.funnel.getByID',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async createFunnel(item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.funnel.create",
+			params: { item },
+		});
+		return response;
+	}
+
+	async updateFunnel(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.funnel.save",
+			params: { pkid, item },
+		});
+		return response;
+	}
+
+	async deleteFunnel(pkid) {
+		const response = await lib.ioCallAction({
+			entity: "crm.api.funnel.delete",
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async getLeads(filter = {}, start = 0, limit = 10, search = '') {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.search',
+			params: { filter, start, limit, search, order: { pkid: 'desc' } },
+		});
+		return response; // { error_code, error_str, items, total }
+	}
+	
+	async getLeadByPkid(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.getByID',
+			params: { pkid },
+		});
+		return response; // { error_code, error_str, item }
+	}
+	
+	async createLead(item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.create',
+			params: { item },
+		});
+		return response; // { error_code, error_str, pkid }
+	}
+ 
+	async updateLead(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.save',
+			params: { pkid, item },
+		});
+		return response; // { error_code, error_str }
+	}
+ 
+	async deleteLead(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.delete',
+			params: { pkid },
+		});
+		return response; // { error_code, error_str }
+	}
+	
+	async getLeadStats(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.stats',
+			params: { ...filter },
+		});
+		return response;
+	}
+
+	async getLeadFilterValues(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.filterValues',
+			params: { ...filter },
+		});
+		return response;
+	}
+
+	// Перетаскивание карточки между колонками канбана (смена этапа)
+	async moveLead(pkid, lead_stage_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.move',
+			params: { pkid, lead_stage_pkid },
+		});
+		return response; // { error_code, error_str, pkid, lead_stage_pkid }
+	}
+
+	async advanceLead(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.advance',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async rollbackLead(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.rollback',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async canRollbackLead(company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.canRollback',
+			params: { company_pkid },
+		});
+		return response; // { error_code, error_str, canRollback }
+	}
+
+	// Реестр статусных констант проекта (App\Api\EnumApi) — по одному методу
+	// на каждый список, компонент тянет только то, что реально использует.
+	async getLeadStatusTransitions() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.leadStatusTransitions',
+			params: {},
+		});
+		return response; // { error_code, error_str, statusTransitions }
+	}
+
+	async getLeadStatusRollback() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.leadStatusRollback',
+			params: {},
+		});
+		return response; // { error_code, error_str, statusRollback }
+	}
+
+	async getLeadRejectableStatuses() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.leadRejectableStatuses',
+			params: {},
+		});
+		return response; // { error_code, error_str, rejectableStatuses }
+	}
+
+	async getLeadDeleteRolePkids() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.leadDeleteRolePkids',
+			params: {},
+		});
+		return response; // { error_code, error_str, deleteRolePkids }
+	}
+
+	async getLeadStatusLabels() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.leadStatusLabels',
+			params: {},
+		});
+		return response; // { error_code, error_str, statusLabels }
+	}
+
+	async getLeadSourceLabels() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.leadSourceLabels',
+			params: {},
+		});
+		return response; // { error_code, error_str, sourceLabels }
+	}
+
+	async getAdminRolePkid() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.adminRolePkid',
+			params: {},
+		});
+		return response; // { error_code, error_str, adminRolePkid }
+	}
+
+	async getDealStatusRollback() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.dealStatusRollback',
+			params: {},
+		});
+		return response; // { error_code, error_str, statusRollback }
+	}
+
+	async getDealDeleteRolePkids() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.dealDeleteRolePkids',
+			params: {},
+		});
+		return response; // { error_code, error_str, deleteRolePkids }
+	}
+
+	async getDealStatusLabels() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.dealStatusLabels',
+			params: {},
+		});
+		return response; // { error_code, error_str, statusLabels }
+	}
+
+	async getOrderStatusTransitions() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.orderStatusTransitions',
+			params: {},
+		});
+		return response; // { error_code, error_str, statusTransitions }
+	}
+
+	async getOrderStatusRollback() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.orderStatusRollback',
+			params: {},
+		});
+		return response; // { error_code, error_str, statusRollback }
+	}
+
+	async getOrderCancellableStatuses() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.orderCancellableStatuses',
+			params: {},
+		});
+		return response; // { error_code, error_str, cancellableStatuses }
+	}
+
+	async getOrderDeleteRolePkids() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.orderDeleteRolePkids',
+			params: {},
+		});
+		return response; // { error_code, error_str, deleteRolePkids }
+	}
+
+	async getOrderLockedStatuses() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.orderLockedStatuses',
+			params: {},
+		});
+		return response; // { error_code, error_str, lockedStatuses }
+	}
+
+	async getOrderStatusLabels() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.orderStatusLabels',
+			params: {},
+		});
+		return response; // { error_code, error_str, statusLabels }
+	}
+
+	async getInvoiceStatusLabels() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.invoiceStatusLabels',
+			params: {},
+		});
+		return response; // { error_code, error_str, statusLabels }
+	}
+
+	// Тип предложения (Опт/Розница) — влияет на подбор offer'а товара при
+	// добавлении в инвойс (Продажа/Заказ), см. EnumApi::OFFER_TYPE_LABELS.
+	async getOfferTypeLabels() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.offerTypeLabels',
+			params: {},
+		});
+		return response; // { error_code, error_str, offerTypeLabels }
+	}
+
+	async getEntityTypes() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.enum.entityTypes',
+			params: {},
+		});
+		return response; // { error_code, error_str, lead, deal, order, client }
+	}
+
+	async canDeleteLead(company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.canDelete',
+			params: { company_pkid },
+		});
+		return response; // { error_code, error_str, canDelete }
+	}
+	
+	async rejectLead(pkid, refusalReason) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.lead.reject',
+			params: { pkid, refusalReason },
+		});
+		return response;
+	}
+
+	async rollbackDeal(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.rollback',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async canRollbackDeal(company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.canRollback',
+			params: { company_pkid },
+		});
+		return response; // { error_code, error_str, canRollback }
+	}
+
+	// ---- Lead stages (кнопка "Этап") ----
+ 
+	async getLeadStages(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.leadStage.search',
+			params: { filter, order: { sortOrder: 'asc' } },
+		});
+		return response; // { error_code, error_str, items, total }
+	}
+ 
+	async createLeadStage(item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.leadStage.create',
+			params: { item },
+		});
+		return response; // { error_code, error_str, pkid }
+	}
+ 
+	async updateLeadStage(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.leadStage.save',
+			params: { pkid, item },
+		});
+		return response;
+	}
+ 
+	async deleteLeadStage(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.leadStage.delete',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async reorderLeadStages(pkids) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.leadStage.reorder',
+			params: { pkids },
+		});
+		return response;
+	}
+	
+	// ---- Deals ----
+	async getDeals(filter = {}, start = 0, limit = 10, search = '') {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.search',
+			params: { filter, start, limit, search, order: { pkid: 'desc' } },
+		});
+		return response;
+	}
+
+	async getDealByPkid(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.getByID',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async createDeal(item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.create',
+			params: { item },
+		});
+		return response;
+	}
+
+	async updateDeal(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.save',
+			params: { pkid, item },
+		});
+		return response;
+	}
+
+	async deleteDeal(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.delete',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async canDeleteDeal(company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.canDelete',
+			params: { company_pkid },
+		});
+		return response; // { error_code, error_str, canDelete }
+	}
+
+	async getDealStats(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.stats',
+			params: { ...filter },
+		});
+		return response;
+	}
+
+	async getDealFilterValues(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.filterValues',
+			params: { ...filter },
+		});
+		return response;
+	}
+
+	async moveDeal(pkid, stage_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.move',
+			params: { pkid, stage_pkid },
+		});
+		return response;
+	}
+
+	async loseDeal(pkid, refusalReason = '') {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.deal.lose',
+			params: { pkid, refusalReason },
+		});
+		return response;
+	}
+
+	// ---- Deal stages ----
+	async getDealStages(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.dealStage.search',
+			params: { filter, order: { sortOrder: 'asc' } },
+		});
+		return response;
+	}
+
+	async createDealStage(item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.dealStage.create',
+			params: { item },
+		});
+		return response;
+	}
+
+	async updateDealStage(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.dealStage.save',
+			params: { pkid, item },
+		});
+		return response;
+	}
+
+	async deleteDealStage(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.dealStage.delete',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async reorderDealStages(pkids) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.dealStage.reorder',
+			params: { pkids },
+		});
+		return response;
+	}
+
+	async getTasks(filter = {}, start = 0, limit = 50, search = '', order = null) {
+		const params = { filter, start, limit };
+		if (search) params.search = search;
+		params.order = order || { pkid: 'desc' };
+ 
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.task.search',
+			params,
+		});
+		return response; // { error_code, error_str, items, total }
+	}
+ 
+	async getTaskByPkid(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.task.getByID',
+			params: { pkid },
+		});
+		return response; // { error_code, error_str, item }
+	}
+ 
+	async createTask(item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.task.create',
+			params: { item },
+		});
+		return response; // { error_code, error_str, pkid }
+	}
+ 
+	async updateTask(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.task.save',
+			params: { pkid, item },
+		});
+		return response; // { error_code, error_str }
+	}
+
+	async toggleTaskStatus(pkid, status) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.task.toggleStatus',
+			params: { pkid, status },
+		});
+		return response;
+	}
+ 
+	async deleteTask(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.task.delete',
+			params: { pkid },
+		});
+		return response; // { error_code, error_str }
+	}
+
+	async getSubtasks(taskPkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.subtask.search',
+			params: {
+				filter: { task_pkid: taskPkid },
+				order: { pkid: 'asc' },
+			},
+		});
+		return response;
+	}
+
+	async createSubtask(item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.subtask.create',
+			params: { item },
+		});
+		return response;
+	}
+
+	async updateSubtask(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.subtask.save',
+			params: { pkid, item },
+		});
+		return response;
+	}
+
+	async toggleSubtaskStatus(pkid, isCompleted) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.subtask.toggleStatus',
+			params: { pkid, isCompleted },
+		});
+		return response;
+	}
+
+	async deleteSubtask(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.subtask.delete',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async getTaskNotes(taskPkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.taskNote.search',
+			params: {
+				filter: { task_pkid: taskPkid },
+				order: { pkid: 'desc' },
+			},
+		});
+		return response;
+	}
+
+	async createTaskNote(item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.taskNote.create',
+			params: { item },
+		});
+		return response;
+	}
+
+	async deleteTaskNote(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.taskNote.delete',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async getAuditLogs(filter = {}, start = 0, limit = 100, search = '', order = null) {
+		const params = { filter, start, limit };
+		if (search) params.search = search;
+		params.order = order || { pkid: 'desc' };
+
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.auditLog.search',
+			params,
+		});
+		return response;
+	}
+
+	// ---- Orders ----
+	async getOrders(filter = {}, start = 0, limit = 10, search = '') {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.search',
+			params: { filter, start, limit, search, order: { pkid: 'desc' } },
+		});
+		return response; // { error_code, error_str, items, total }
+	}
+
+	async getOrderByPkid(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.getByID',
+			params: { pkid },
+		});
+		return response; // { error_code, error_str, item }
+	}
+
+	async createOrder(item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.create',
+			params: { item },
+		});
+		return response; // { error_code, error_str, pkid }
+	}
+
+	async updateOrder(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.save',
+			params: { pkid, item },
+		});
+		return response; // { error_code, error_str }
+	}
+
+	async deleteOrder(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.delete',
+			params: { pkid },
+		});
+		return response; // { error_code, error_str }
+	}
+
+	async getOrderStats(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.stats',
+			params: { ...filter },
+		});
+		return response;
+	}
+
+	async getOrderFilterValues(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.filterValues',
+			params: { ...filter },
+		});
+		return response;
+	}
+
+	// Перетаскивание карточки между колонками канбана (смена этапа)
+	async moveOrder(pkid, stage_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.move',
+			params: { pkid, stage_pkid },
+		});
+		return response; // { error_code, error_str, pkid, stage_pkid }
+	}
+
+	async advanceOrder(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.advance',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async rollbackOrder(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.rollback',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async canRollbackOrder(company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.canRollback',
+			params: { company_pkid },
+		});
+		return response; // { error_code, error_str, canRollback }
+	}
+
+	async canDeleteOrder(company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.canDelete',
+			params: { company_pkid },
+		});
+		return response; // { error_code, error_str, canDelete }
+	}
+
+	async cancelOrder(pkid, refusalReason) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.cancel',
+			params: { pkid, refusalReason },
+		});
+		return response;
+	}
+
+	// ---- Invoices (без своей таблицы в БД — App\Api\InvoiceApi проксирует
+	// в сервис trade, см. bmc.trade2.model.invoices2.* и legacy invoices.html) ----
+
+	async getInvoices(filter = {}, start = 0, limit = 25, search = '') {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.search',
+			params: { filter, start, limit, search },
+		});
+		return response; // { error_code, error_str, items, total }
+	}
+
+	async changeInvoiceStatus(params) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.changeStatus',
+			params,
+		});
+		return response;
+	}
+
+	// Полная карточка одного инвойса с реальным составом товаров (products,
+	// см. InvoiceApi::doDetails) — отдельный запрос, потому что список
+	// (getInvoices/doSearch) products не возвращает, только products_count.
+	async getInvoiceDetails(pkid, company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.details',
+			params: {
+				pkid,
+				company_pkid,
+			},
+		});
+
+		return response;
+	}
+
+	async getInvoicesStat(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.stat',
+			params: { filter },
+		});
+		return response; // { error_code, error_str, invoices_count, invoices_sum, invoices_sredn_sum, clients_sum }
+	}
+
+	async getInvoicesFilterableFields() {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.filterableFields',
+			params: {},
+		});
+		return response; // { error_code, error_str, fields }
+	}
+
+	// Справочники для фильтров таблицы инвойсов (FacetedFilter по
+	// warehouse_pkid/delivery_method) — те же entity, что и invoices.html
+	// дёргает напрямую через ioCallAction() в Twig (app.model.warehouses.getData,
+	// app.model.deliveryMethods.getData), тип entity 'model', поэтому не через
+	// crm.api.*, а как есть.
+	async getWarehouses(company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.getWarehouses',
+			params: { company_pkid },
+		});
+		return response;
+	}
+
+	async getDeliveryMethods(company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.getDeliveryMethods',
+			params: { company_pkid },
+		});
+		return response;
+	}
+
+	async searchGoods(query, limit = 10, company_pkid = null) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.searchGoods',
+			params: { query, limit, company_pkid },
+		});
+		return response; // { error_code, error_str, items }
+	}
+
+	async findUser(login) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.findUser',
+			params: { login },
+		});
+		return response; // { error_code, error_str, pkid, login }
+	}
+
+	async createInvoiceOrder(payload) {
+		const response = await lib.ioCallAction({
+			entity: 'bmc.trade2.model.invoices2.addOrder',
+			params: payload,
+		});
+		return response; // { error_code, error_str, pkid }
+	}
+
+	// Создание инвойса типа "Продажа" — зеркало bmc.trade2.model.invoices2.addSale
+	// из invoices.html (кнопка .invoice-add-btn).
+	async createInvoiceSale(payload) {
+		const response = await lib.ioCallAction({
+			entity: 'bmc.trade2.model.invoices2.addSale',
+			params: payload,
+		});
+		return response; // { error_code, error_str, pkid }
+	}
+
+	// Создание инвойса типа "Возврат" — зеркало bmc.trade2.model.invoices2.addReturn
+	// из invoices.html (кнопка .invoice-return-add-btn).
+	async createInvoiceReturn(payload) {
+		const response = await lib.ioCallAction({
+			entity: 'bmc.trade2.model.invoices2.addReturn',
+			params: payload,
+		});
+		return response; // { error_code, error_str, pkid }
+	}
+
+	// Поиск проданного/оформленного инвойса по номеру для оформления
+	// возврата — зеркало showSelectInvoice()/invoiceReturnShowAdd() из
+	// invoices.html: ищем среди продаж (0) и заказов (2), затем сразу
+	// дотягиваем полный состав (products/payments) через doDetails.
+	async findInvoiceForReturn(invoiceNumber) {
+		const list = await this.getInvoices({ invoice_number: invoiceNumber, type: [0, 2] }, 0, 1, '');
+		if (list.error_code !== 1 || !list.items || !list.items.length) {
+			return list;
+		}
+		return this.getInvoiceDetails(list.items[0].pkid);
+	}
+
+	// ---- Order stages (кнопка "Этап") ----
+
+	async getOrderStages(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.orderStage.search',
+			params: { filter, order: { sortOrder: 'asc' } },
+		});
+		return response; // { error_code, error_str, items, total }
+	}
+
+	async createOrderStage(item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.orderStage.create',
+			params: { item },
+		});
+		return response; // { error_code, error_str, pkid }
+	}
+
+	async updateOrderStage(pkid, item) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.orderStage.save',
+			params: { pkid, item },
+		});
+		return response;
+	}
+
+	async deleteOrderStage(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.orderStage.delete',
+			params: { pkid },
+		});
+		return response;
+	}
+
+	async reorderOrderStages(pkids) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.orderStage.reorder',
+			params: { pkids },
+		});
+		return response;
+	}
+
+	async canRollbackOrder(company_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.order.canRollback',
+			params: { company_pkid },
+		});
+		return response;
+	}
+
+	// ---- Task files (кнопка "Прикрепить файл") ----
+
+	// Бинарный файл нельзя передать через params (это JSON) — шлём через
+	// form: FormData, ioCallAction сам определяет multipart/form-data по нему
+	// (см. uploadClientFieldFile — тот же паттерн).
+	async uploadTaskFile(taskPkid, file, onUploadProgress) {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.taskFile.uploadFile',
+			params: {
+				task_pkid: taskPkid,
+			},
+			form: formData,
+			onUploadProgress,
+		});
+		return response;
+	}
+
+	async getTaskFiles(task_pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.taskFile.getFiles',
+			params: { task_pkid },
+		});
+		return response; // { error_code, error_str, items }
+	}
+
+	// Прямая ссылка на скачивание файла задачи (используется в :href).
+	// Проверьте, что action.buildUrl доступен в вашей сборке lib —
+	// если нет, замените на актуальный способ построения API-URL проекта.
+	getTaskFileDownloadUrl(pkid) {
+		return lib.buildActionUrl('crm.api.taskFile.downloadFile', { pkid });
+	}
+
+	// ---- Client custom field files (поля типа "Изображение"/"Файл" в CustomerModal) ----
+
+	// Бинарный файл нельзя передать через params (это JSON) — шлём через
+	// form: FormData, ioCallAction сам определяет multipart/form-data по нему.
+	// clientPkid может быть 0/null, если клиент ещё не создан — файл всё равно
+	// заливается и привязывается к клиенту позже через сохранение customFields.
+	async uploadClientFieldFile(companyPkid, clientPkid, fieldPkid, file, onUploadProgress) {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.clientFieldValues.uploadFile',
+			// form отвечает за сам файл (бинарь нельзя передать через params — это JSON),
+			// а обычные скаляры по-прежнему идут через params, как и во всех остальных вызовах
+			params: {
+				company_pkid: companyPkid,
+				client_pkid: clientPkid || 0,
+				field_pkid: fieldPkid,
+			},
+			form: formData,
+			onUploadProgress,
+		});
+		return response; // { error_code, error_str, fileName, filePath, url }
+	}
+
+	async deleteTaskFile(pkid) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.taskFile.deleteFile',
+			params: { pkid },
+		});
+		return response; // { error_code, error_str, pkid }
+	}
+
+	// mfModel.js
+	async searchOffers({ tid, offerType }) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.searchOffers',
+			params: { tid, offer_type: offerType },
+		});
+		return response;
+	}
+
+	async verifyQrCode({ tid, qrNumber, warehousePkid }) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.verifyQrCode',
+			params: {
+				tid,
+				qr_number: qrNumber,
+				warehouse_pkid: warehousePkid || '',
+			},
+		});
+		return response;
+	}
+}
