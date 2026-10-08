@@ -335,36 +335,72 @@
 									</div>
 								</div>
 
-								<!-- Редактирование статуса -->
+								<!-- Редактирование инвойса -->
 								<div
 									v-if="selectedInvoice && selectedInvoice.status !== -1"
 									class="p-3 bg-white border border-slate-200 rounded-xl"
 								>
-									<div class="flex items-center gap-3">
-										<span class="text-xs font-semibold text-slate-600 whitespace-nowrap">
-											Статус:
-										</span>
+									<div class="flex flex-col gap-3">
 
-										<select
-											v-model="editStatus"
-											class="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
-										>
-											<option
-												v-for="option in statusOptions"
-												:key="option.value"
-												:value="option.value"
+										<div>
+											<span class="text-xs font-semibold text-slate-600">
+												Статус:
+											</span>
+
+											<select
+												v-model="editStatus"
+												class="w-full mt-2 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
 											>
-												{{ option.label }}
-											</option>
-										</select>
+												<option
+													v-for="option in statusOptions"
+													:key="option.value"
+													:value="option.value"
+												>
+													{{ option.label }}
+												</option>
+											</select>
+										</div>
 
-										<Button
-											color="primary"
-											class="px-3 py-2 text-xs"
-											@click="console.log('BUTTON CLICK')"
-										>
-											Сохранить
-										</Button>
+										<div class="grid grid-cols-2 gap-2">
+											<Button
+												color="primary"
+												class="px-3 py-2 text-xs"
+												:disabled="isSavingInvoice"
+												@click="editInvoiceEvent('edit')"
+											>
+												Изменить
+											</Button>
+
+											<Button
+												color="primary"
+												variant="soft"
+												class="px-3 py-2 text-xs"
+												:disabled="isSavingInvoice"
+												@click="editInvoiceEvent('edit-delivery')"
+											>
+												Доставка
+											</Button>
+
+											<Button
+												color="primary"
+												variant="soft"
+												class="px-3 py-2 text-xs"
+												:disabled="isSavingInvoice || !pendingPayments.length"
+												@click="editInvoiceEvent('edit-sale', pendingPayments)"
+											>
+												Продажа
+											</Button>
+
+											<Button
+												color="primary"
+												variant="soft"
+												class="px-3 py-2 text-xs"
+												:disabled="isSavingInvoice || !pendingPayments.length"
+    											@click="editInvoiceEvent('edit-sale-delivery', pendingPayments)"
+											>
+												Продажа + доставка!
+											</Button>
+										</div>
 									</div>
 								</div>
 
@@ -393,6 +429,60 @@
 									</div>
 									<div v-else class="text-xs text-slate-400 p-3 bg-slate-50 rounded-lg border border-dashed border-slate-200">
 										Состав недоступен в ответе trade для этого инвойса
+									</div>
+								</section>
+
+								<!-- Платежи -->
+								<section class="pt-4 border-t border-slate-100">
+									<div class="flex items-center justify-between mb-3">
+										<h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest">
+											Платежи
+										</h3>
+
+										<span class="text-xs text-slate-400">
+											{{ selectedInvoice.paymentsCount || 0 }}
+										</span>
+									</div>
+
+									<Button
+										color="primary"
+										class="w-full mt-3"
+										:disabled="isSavingInvoice || selectedInvoice?.status === 2"
+										@click="openPaymentDialog"
+									>
+										Внести платеж
+									</Button>
+
+									<div
+										v-if="selectedInvoice.payments && selectedInvoice.payments.length"
+										class="space-y-2"
+									>
+										<div
+											v-for="(payment, index) in selectedInvoice.payments"
+											:key="payment.pkid || index"
+											class="p-3 bg-white border border-slate-100 rounded-lg"
+										>
+											<div class="flex items-center justify-between">
+												<span class="text-xs text-slate-500">
+													Платёж {{ index + 1 }}
+												</span>
+
+												<span class="text-sm font-bold text-slate-800">
+													{{ formatCurrency(payment.amount_value || payment.amount?.value || 0) }}
+												</span>
+											</div>
+
+											<div class="text-[10px] text-slate-400 mt-1">
+												Тип: {{ payment.pay_type || '—' }}
+											</div>
+										</div>
+									</div>
+
+									<div
+										v-else
+										class="text-xs text-slate-400 p-3 bg-slate-50 rounded-lg border border-dashed border-slate-200"
+									>
+										Платежей нет
 									</div>
 								</section>
 
@@ -432,6 +522,106 @@
 				</TransitionChild>
 			</Dialog>
 		</TransitionRoot>
+
+<Teleport to="body">
+    <TransitionRoot appear :show="isPaymentDialogOpen" as="template">
+        <div class="fixed inset-0 z-[9999]">
+
+            <!-- Затемнение -->
+            <div
+                class="fixed inset-0 bg-black/40"
+                @click="closePaymentDialog"
+            />
+
+            <!-- Окно -->
+            <div class="fixed inset-0 overflow-y-auto">
+                <div class="flex min-h-full items-center justify-center p-4">
+                    <div
+                        class="relative w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+                        @click.stop
+                    >
+                        <h3 class="text-lg font-bold text-slate-800">
+                            Внесение платежа
+                        </h3>
+
+                        <!-- Тип платежа -->
+                        <div class="mt-5">
+                            <label class="block text-xs font-bold text-slate-500 mb-2">
+                                Тип платежа
+                            </label>
+
+                            <select
+                                v-model="paymentType"
+                                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                            >
+                                <option
+                                    v-for="type in paymentTypes"
+                                    :key="type.value"
+                                    :value="type.value"
+                                >
+                                    {{ type.label }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <!-- Метод платежа -->
+                        <div class="mt-4">
+                            <label class="block text-xs font-bold text-slate-500 mb-2">
+                                Метод платежа
+                            </label>
+
+                            <select
+                                v-model="paymentPayType"
+                                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                            >
+                                <option
+                                    v-for="type in paymentPayTypes"
+                                    :key="type.value"
+                                    :value="type.value"
+                                >
+                                    {{ type.label }}
+                                </option>
+                            </select>
+                        </div>
+
+                        <!-- Сумма -->
+                        <div class="mt-4">
+                            <label class="block text-xs font-bold text-slate-500 mb-2">
+                                Сумма
+                            </label>
+
+                            <Input
+                                v-model="paymentAmount"
+                                type="number"
+                                min="0"
+                                step="0.01"
+                            />
+                        </div>
+
+                        <!-- Кнопки -->
+                        <div class="flex justify-end gap-2 mt-6">
+                            <Button
+                                variant="flat"
+                                @click="closePaymentDialog"
+                            >
+                                Отмена
+                            </Button>
+
+                            <Button
+                                color="primary"
+                                :disabled="paymentProcessing || Number(paymentAmount) <= 0"
+                                @click="confirmPayment"
+                            >
+                                Внести платеж
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </TransitionRoot>
+</Teleport>
 
 		<InvoiceCreateModal
 			ref="invoiceCreateModal"
@@ -655,6 +845,23 @@ export default {
 	data() {
 		return {
 			isDrawerOpen: false,
+
+			isPaymentDialogOpen: false,
+			paymentTypes: [
+				{ value: '1', label: 'Оплата' },
+			],
+
+			paymentPayTypes: [
+				{ value: '0', label: 'Наличные' },
+				{ value: '1', label: 'VISA' },
+				{ value: '2', label: 'Банковский перевод' },
+			],
+
+			paymentType: '1',
+			paymentPayType: '0',
+			paymentAmount: 0,
+			paymentProcessing: false,
+			pendingPayments: [],
 
 			invoicesData: [],
 
@@ -1008,6 +1215,7 @@ export default {
 				);
 				if (data.error_code === 1) {
 					this.invoicesData = (data.items || []).map(this.mapInvoiceFromApi);
+					console.log('RAW INVOICE:', data.items?.[0]);
 					this.totalInvoices = data.total ?? data.count ?? this.invoicesData.length;
 					if (this.invoicesData.length) {
 						this.selectedInvoice = this.invoicesData[0];
@@ -1015,6 +1223,8 @@ export default {
 				} else {
 					this.$noty.error(data.error_str || 'Ошибка загрузки инвойсов', { layout: 'bottomRight', timeout: 3000 });
 				}
+				console.log('INVOICE AFTER SALE:', this.selectedInvoice);
+console.log('PAYMENTS:', this.selectedInvoice?.payments);
 			} catch (e) {
 				console.error(e);
 				this.$noty.error('Ошибка сети', { layout: 'bottomRight', timeout: 3000 });
@@ -1092,6 +1302,7 @@ export default {
 				cashierLogin: el.cashier_login || '',
 				creatorLogin: el.creator_login || '',
 				paymentsCount: el.payments_count || 0,
+				payments: el.payments || [],
 				paymentMethod: '',
 				mlmRewardPct: 0,
 				items: this.groupInvoiceProducts(el.products || []),
@@ -1191,6 +1402,7 @@ export default {
 			this.selectedInvoice = { ...inv, itemsLoading: true };
 			this.editStatus = Number(inv.status);
 			this.isDrawerOpen = true;
+			console.log('FULL INVOICE:', this.selectedInvoice);
 
 			try {
 				const data = await this.mfModel.getInvoiceDetails(inv.pkid, this.companyPkid);
@@ -1319,56 +1531,157 @@ export default {
 
 			return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 		},
-	},
 
-	async saveInvoiceStatus() {
-		if (!this.selectedInvoice || this.editStatus === null) {
-			return;
-		}
-
-		this.isSavingInvoice = true;
-
-		try {
-			const res = await this.mfModel.editInvoice({
-				pkid: this.selectedInvoice.pkid,
-				company_pkid: this.companyPkid,
-				status: Number(this.editStatus),
-			});
-
-			if (res?.error_code === 1 || res?.error_code === 0) {
-				this.selectedInvoice.status = Number(this.editStatus);
-
-				this.$noty.success(
-					'Статус инвойса успешно изменён',
-					{
-						layout: 'bottomRight',
-						timeout: 3000,
-					}
-				);
-
-				await this.loadInvoices();
-			} else {
-				this.$noty.error(
-					res?.error_str || 'Не удалось сохранить статус',
-					{
-						layout: 'bottomRight',
-						timeout: 3000,
-					}
-				);
+		async saveInvoiceStatus() {
+			await this.editInvoiceEvent('edit');
+		},
+		
+		async editInvoiceEvent(event, payments = []) {
+			if (!this.selectedInvoice) {
+				return;
 			}
-		} catch (e) {
-			console.error('Ошибка сохранения статуса:', e);
 
-			this.$noty.error(
-				'Произошла ошибка при сохранении статуса',
-				{
-					layout: 'bottomRight',
-					timeout: 3000,
+			this.isSavingInvoice = true;
+
+			try {
+				const params = {
+					pkid: this.selectedInvoice.pkid,
+					company_pkid: this.companyPkid,
+					status: Number(this.editStatus),
+					event,
+				};
+
+				if (event === 'edit-sale' || event === 'edit-sale-delivery') {
+					params.payments = payments;
 				}
+				console.log('SALE PARAMS:', JSON.stringify(params, null, 2));
+				const res = await this.mfModel.editInvoice(params);
+				console.log('SALE RESPONSE:', JSON.stringify(res, null, 2));
+
+				if (res?.error_code === 1 || res?.error_code === 0) {
+					this.$noty.success(
+						event === 'edit-sale'
+							? 'Продажа успешно выполнена'
+							: 'Инвойс успешно изменён',
+						{
+							layout: 'bottomRight',
+							timeout: 3000,
+						}
+					);
+
+					await this.loadInvoices();
+					return;
+				}
+
+				this.$noty.error(
+					res?.error_str || 'Не удалось изменить инвойс',
+					{
+						layout: 'bottomRight',
+						timeout: 3000,
+					}
+				);
+			} catch (e) {
+				this.$noty.error(
+					'Произошла ошибка при изменении инвойса',
+					{
+						layout: 'bottomRight',
+						timeout: 3000,
+					}
+				);
+			} finally {
+				this.isSavingInvoice = false;
+			}
+		},
+
+		async addPaymentAndSale() {
+			if (!this.selectedInvoice) {
+				return;
+			}
+
+			const amount = Number(
+				this.selectedInvoice?.amount_paid?.value
+				|| this.selectedInvoice?.amount?.value
+				|| 0
 			);
-		} finally {
-			this.isSavingInvoice = false;
-		}
+
+			if (amount <= 0) {
+				this.$noty.error('Некорректная сумма платежа');
+				return;
+			}
+
+			const payments = [{
+				type: '1',
+				pay_type: '0',
+				moneypacket_pkid: '0',
+				moneypacket_group_pkid: '',
+				moneypacket_company_pkid: '',
+				vseobuch_period_pkid: '',
+				amount: {
+					value: amount,
+					currency: this.selectedInvoice?.currency || 'KZT',
+					pay_type: '0',
+				},
+			}];
+
+			await this.editInvoiceEvent('edit-sale', payments);
+		},
+
+		openPaymentDialog() {
+			if (!this.selectedInvoice) {
+				return;
+			}
+
+			this.paymentType = '1';
+			this.paymentPayType = '0';
+
+			this.paymentAmount = Number(
+				this.selectedInvoice?.amount_paid?.value
+				|| this.selectedInvoice?.amount?.value
+				|| 0
+			);
+
+			this.isPaymentDialogOpen = true;
+		},
+
+		closePaymentDialog() {
+			if (!this.paymentProcessing) {
+				this.isPaymentDialogOpen = false;
+			}
+		},
+
+		async confirmPayment() {
+			if (!this.selectedInvoice) {
+				return;
+			}
+
+			const amount = Number(this.paymentAmount);
+
+			if (amount <= 0) {
+				this.$noty.error('Укажите сумму платежа');
+				return;
+			}
+
+			const payment = {
+				type: this.paymentType,
+				pay_type: this.paymentPayType,
+				moneypacket_pkid: '0',
+				moneypacket_group_pkid: '',
+				moneypacket_company_pkid: '',
+				vseobuch_period_pkid: '',
+				amount: {
+					value: amount,
+					currency: this.selectedInvoice?.currency || 'KZT',
+					pay_type: this.paymentPayType,
+				},
+			};
+
+			this.pendingPayments.push(payment);
+
+			this.$noty.success('Платеж добавлен');
+			console.log('pendingPayments:', this.pendingPayments);
+
+			this.isPaymentDialogOpen = false;
+		},
 	},
 };
 </script>
