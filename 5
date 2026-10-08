@@ -349,6 +349,7 @@
 
 											<select
 												v-model="editStatus"
+												:disabled="isSavingInvoice || isInvoiceDelivered"
 												class="w-full mt-2 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
 											>
 												<option
@@ -362,44 +363,53 @@
 										</div>
 
 										<div class="grid grid-cols-2 gap-2">
+
+											<!-- Сохранить изменения -->
 											<Button
 												color="primary"
 												class="px-3 py-2 text-xs"
-												:disabled="isSavingInvoice"
+												:disabled="isSavingInvoice || !canEditInvoice"
 												@click="editInvoiceEvent('edit')"
 											>
-												Изменить
+												Сохранить
 											</Button>
 
+											<!-- Оформить доставку — только после продажи -->
 											<Button
+												v-if="canDelivery"
 												color="primary"
 												variant="soft"
 												class="px-3 py-2 text-xs"
 												:disabled="isSavingInvoice"
 												@click="editInvoiceEvent('edit-delivery')"
 											>
-												Доставка
+												Оформить доставку
 											</Button>
 
+											<!-- Продажа -->
 											<Button
+												v-if="!isInvoiceSold && !isInvoiceDelivered"
 												color="primary"
 												variant="soft"
 												class="px-3 py-2 text-xs"
-												:disabled="isSavingInvoice || !pendingPayments.length"
+												:disabled="isSavingInvoice || !canSale"
 												@click="editInvoiceEvent('edit-sale', pendingPayments)"
 											>
 												Продажа
 											</Button>
 
+											<!-- Продажа + доставка -->
 											<Button
+												v-if="!isInvoiceSold && !isInvoiceDelivered"
 												color="primary"
 												variant="soft"
 												class="px-3 py-2 text-xs"
-												:disabled="isSavingInvoice || !pendingPayments.length"
-    											@click="editInvoiceEvent('edit-sale-delivery', pendingPayments)"
+												:disabled="isSavingInvoice || !canSale"
+												@click="editInvoiceEvent('edit-sale-delivery', pendingPayments)"
 											>
-												Продажа + доставка!
+												Продажа + доставка
 											</Button>
+
 										</div>
 									</div>
 								</div>
@@ -447,7 +457,7 @@
 									<Button
 										color="primary"
 										class="w-full mt-3"
-										:disabled="isSavingInvoice || selectedInvoice?.status === 2"
+										:disabled="isSavingInvoice || !canAddPayment"
 										@click="openPaymentDialog"
 									>
 										Внести платеж
@@ -922,6 +932,24 @@ export default {
 	computed: {
 		companyPkid() {
 			return this.$store.state.io7.auth.selectedCabPkid;
+		},
+		isInvoiceDelivered() {
+			return Number(this.selectedInvoice?.status) === 12;
+		},
+		isInvoiceCancelled() {
+			return Number(this.selectedInvoice?.status) === -1;
+		},
+		isInvoiceSold() {
+			return Number(this.selectedInvoice?.status) === 2;
+		},
+		canEditInvoice() {
+			return !this.isInvoiceDelivered && !this.isInvoiceCancelled;
+		},
+		canSale() {
+			return !this.isInvoiceSold
+				&& !this.isInvoiceDelivered
+				&& !this.isInvoiceCancelled
+				&& this.pendingPayments.length > 0;
 		},
 		filteredRows() {
 			return this.table ? this.table.getRowModel().rows : [];
