@@ -353,7 +353,7 @@
 												class="w-full mt-2 text-sm border border-slate-200 rounded-lg px-3 py-2 bg-white"
 											>
 												<option
-													v-for="option in statusOptions"
+													v-for="option in availableStatusOptions"
 													:key="option.value"
 													:value="option.value"
 												>
@@ -366,9 +366,10 @@
 
 											<!-- Сохранить изменения -->
 											<Button
+												v-if="!isInvoiceDelivered && !isInvoiceCancelled"
 												color="primary"
 												class="px-3 py-2 text-xs"
-												:disabled="isSavingInvoice || !canEditInvoice"
+												:disabled="isSavingInvoice"
 												@click="editInvoiceEvent('edit')"
 											>
 												Сохранить
@@ -376,7 +377,7 @@
 
 											<!-- Оформить доставку — только после продажи -->
 											<Button
-												v-if="canDelivery"
+												v-if="isInvoicePreparing"
 												color="primary"
 												variant="soft"
 												class="px-3 py-2 text-xs"
@@ -943,13 +944,30 @@ export default {
 			return Number(this.selectedInvoice?.status) === 2;
 		},
 		canEditInvoice() {
-			return !this.isInvoiceDelivered && !this.isInvoiceCancelled;
+			return !this.isInvoicePreparing
+				&& !this.isInvoiceDelivered
+				&& !this.isInvoiceCancelled;
 		},
 		canSale() {
 			return !this.isInvoiceSold
 				&& !this.isInvoiceDelivered
 				&& !this.isInvoiceCancelled
 				&& this.pendingPayments.length > 0;
+		},
+		canAddPayment() {
+			const status = Number(this.selectedInvoice?.status);
+
+			return status !== 12
+				&& status !== -1
+				&& !this.selectedInvoice?.isPayed;
+		},
+		isInvoicePreparing() {
+			return Number(this.selectedInvoice?.status) === 2;
+		},
+		availableStatusOptions() {
+			return this.statusOptions.filter(option => {
+				return ![12, -1].includes(Number(option.value));
+			});
 		},
 		filteredRows() {
 			return this.table ? this.table.getRowModel().rows : [];
