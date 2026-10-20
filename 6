@@ -133,13 +133,10 @@ export default class MfModel {
 		return response;
 	}
 
-	async getClientBases(filter = {}) {
+	async getClientBases(filter = {}, start = 0, limit = 100) {
 		const response = await lib.ioCallAction({
 			entity: "crm.api.clientBase.search",
-			params: {
-				filter,
-				order: { pkid: 'desc' }
-			},
+			params: { filter, start, limit, order: { pkid: 'desc' } },
 		});
 		return response;
 	}
@@ -649,6 +646,62 @@ export default class MfModel {
 			params: {},
 		});
 		return response; // { error_code, error_str, sourceLabels }
+	}
+
+	async createLeadSource(item) {
+		return await lib.ioCallAction({
+			entity: 'crm.api.leadSource.create',
+			params: {
+				item,
+			},
+		});
+	}
+
+	async saveLeadSource(item) {
+		return await lib.ioCallAction({
+			entity: 'crm.api.leadSource.save',
+			params: {
+				pkid: item.pkid,
+				item: {
+					pkid: item.pkid,
+					company_pkid: item.company_pkid,
+					name: item.name,
+				},
+			},
+		});
+	}
+
+	async deleteLeadSource(pkid) {
+		return await lib.ioCallAction({
+			entity: 'crm.api.leadSource.delete',
+			params: { pkid },
+		});
+	}
+
+	async getAllLeadSourcesForLabels(company_pkid) {
+		return await lib.ioCallAction({
+			entity: 'crm.api.leadSource.getAllForLabels',
+			params: { company_pkid },
+		});
+	}
+
+	async searchLeadSources() {
+		return await lib.ioCallAction({
+			entity: 'crm.api.leadSource.search',
+			params: {},
+		});
+	}
+
+	async getLeadSources(filter = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.leadSource.search',
+			params: {
+				filter,
+				order: { sortOrder: 'asc' },
+			},
+		});
+
+		return response; // { error_code, error_str, items, total }
 	}
 
 	async getAdminRolePkid() {
@@ -1207,6 +1260,14 @@ export default class MfModel {
 	async changeInvoiceStatus(params) {
 		const response = await lib.ioCallAction({
 			entity: 'crm.api.invoice.changeStatus',
+			params,
+		});
+		return response;
+	}
+
+	async editInvoice(params = {}) {
+		const response = await lib.ioCallAction({
+			entity: 'crm.api.invoice.edit',
 			params,
 		});
 		return response;
