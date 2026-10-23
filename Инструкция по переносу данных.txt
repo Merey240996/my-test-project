@@ -352,3 +352,13 @@ relation_type.jsonl
 5. Убедиться, что получено `EXPORT COMPLETE`, и проверить строки/размеры файлов.
 6. Скопировать шесть JSONL-файлов в постоянное хранилище.
 7. Проверить копию и только после этого переходить к подготовке импорта в новую CRM.
+
+После завершения экспорта MongoDB в JSONL скопировать файлы из контейнера dev_crm в каталог /srv/projects/crm/export/ на сервере:
+
+mkdir -p /srv/projects/crm/export && docker cp dev_crm.1.l0rrgr1qhx35s6nii6zadzehz:/tmp/crm-export/. /srv/projects/crm/export/
+
+Проверить наличие файлов и общий размер:
+
+du -sh /srv/projects/crm/export && ls -lh /srv/projects/crm/export/
+
+Результат: 6 JSONL-файлов общим объёмом около 1,2 ГБ. Исходные файлы в контейнере остаются без изменений.
