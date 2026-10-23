@@ -1,0 +1,354 @@
+# Инструкция: экспорт данных из старого CRM перед миграцией
+
+## 1. Цель этапа
+
+Выгрузить необходимые данные из MongoDB старого CRM в отдельные JSONL-файлы для последующего импорта в новую CRM с MySQL.
+
+- Старый CRM: контейнер `dev_crm`.
+- PHP внутри старого контейнера: `5.4.45`.
+- MongoDB: база `crm`, хост задаётся переменной окружения `MONGO_HOST`.
+- Папка временной выгрузки внутри контейнера: `/tmp/crm-export`.
+- Формат: JSONL — один JSON-документ на одну строку.
+- `actionHistory` не переносим.
+- `crmInvoices` и `io_sequence` также не входят в этот экспорт.
+
+**Важно:** команды ниже предназначены для повторения на проде после проверки имени контейнера и доступности MongoDB. Перед запуском нужно убедиться, что выбран именно старый CRM, а не новый.
+
+---
+
+## 2. Найти старый CRM-контейнер
+
+На сервере, где доступен Docker, выполнить:
+
+```bash
+docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | grep -Ei 'crm|mongo'
+```
+
+В тестовом окружении использовался контейнер:
+
+```text
+dev_crm.1.l0rrgr1qhx35s6nii6zadzehz
+```
+
+На проде имя может отличаться. Во всех дальнейших командах заменить это имя на актуальное.
+
+Проверить версию PHP и наличие старого MongoDB-драйвера:
+
+```bash
+docker exec dev_crm.1.l0rrgr1qhx35s6nii6zadzehz sh -lc \
+'php -v | head -1; php -r '\''echo class_exists("MongoClient") ? "MongoClient available\n" : "MongoClient missing\n";'\'''
+```
+
+В нашем окружении результат был:
+
+```text
+PHP 5.4.45
+MongoClient available
+```
+
+---
+
+## 3. Проверить конфигурацию старого CRM
+
+Файлы внутри контейнера:
+
+```text
+/var/www/html/conf.php
+/var/www/html/app/io/api.php
+```
+
+Параметры MongoDB в `conf.php`:
+
+```php
+define('MONGO_ENABLE', 1);
+define('MONGO_USER', getenv('MONGO_USER'));
+define('MONGO_PASSWORD', getenv('MONGO_PASSWORD'));
+define('MONGO_SERVER', 'mongodb://' . getenv('MONGO_HOST'));
+define('MONGO_PORT', 27017);
+define('MONGO_COLLECTION', 'crm');
+define('MONGO_DATABASE', 'crm');
+define('MONGO_NOAUTH', 0);
+```
+
+Проверить переменные окружения:
+
+```bash
+docker exec dev_crm.1.l0rrgr1qhx35s6nii6zadzehz sh -lc \
+'printf "MONGO_HOST=%s\n" "$MONGO_HOST"; test -n "$MONGO_USER" && echo "MONGO_USER set"; test -n "$MONGO_PASSWORD" && echo "MONGO_PASSWORD set"'
+```
+
+Не выводить пароль на экран и не записывать его в инструкцию.
+
+### Почему нельзя просто подключить `conf.php` через PHP CLI
+
+При отдельном запуске `conf.php` вызывает функцию `outGenPageTime()`, которая не определена в CLI-контексте. В результате PHP завершает выполнение с ошибкой.
+
+Поэтому экспортёр использует штатный `/var/www/html/app/io/api.php` и явно настраивает соединение через `ioSetMongoConnection()`, после чего получает соединение через `ioGetMongoConnection()`.
+
+---
+
+## 4. Какие коллекции экспортируем
+
+В экспорт включены только следующие коллекции:
+
+| Коллекция MongoDB | Файл JSONL |
+|---|---|
+| `database` | `database.jsonl` |
+| `client` | `client.jsonl` |
+| `list` | `list.jsonl` |
+| `clientHistory` | `clientHistory.jsonl` |
+| `databasePerm` | `databasePerm.jsonl` |
+| `relation_type` | `relation_type.jsonl` |
+
+**Не экспортируем `actionHistory`.** В тестовом запуске этот файл успел вырасти до 2,7 ГБ, после чего экспорт был прерван. Для текущего плана миграции история действий не нужна.
+
+Также исключены:
+
+- `crmInvoices`
+- `io_sequence`
+
+Не добавлять их в список без отдельного решения о переносе этих данных.
+
+---
+
+## 5. Создать папку выгрузки и резервную копию экспортёра
+
+В тестовом окружении использовалась папка внутри контейнера:
+
+```text
+/tmp/crm-export
+```
+
+Создать её:
+
+```bash
+docker exec dev_crm.1.l0rrgr1qhx35s6nii6zadzehz \
+mkdir -p /tmp/crm-export
+```
+
+Оригинальный файл `/var/www/html/export-all.php` был скопирован в `/tmp/export-all.php.original`. Это резервная копия, а не рабочий экспортёр для запуска: исходный вариант использовал недоступные внутри контейнера пути и CLI-конфигурацию.
+
+Для экспорта используется отдельный временный файл `/tmp/export-all.php`. Файлы приложения и конфигурации CRM не изменяются.
+
+---
+
+## 6. Создать рабочий экспортёр
+
+Выполнить на сервере команду целиком. Она создаст файл `/tmp/export-all.php` **внутри выбранного контейнера** и запустит экспорт.
+
+```bash
+docker exec -i dev_crm.1.l0rrgr1qhx35s6nii6zadzehz sh -c 'cat > /tmp/export-all.php' <<'PHP'
+<?php
+error_reporting(E_ALL);
+ini_set("display_errors", "1");
+set_time_limit(0);
+
+require "/var/www/html/app/io/api.php";
+
+$host = getenv("MONGO_HOST");
+$user = getenv("MONGO_USER");
+$pass = getenv("MONGO_PASSWORD");
+
+if (!$host) {
+    fwrite(STDERR, "ERROR: MONGO_HOST is empty\n");
+    exit(1);
+}
+
+$connection = array(
+    "server" => "mongodb://" . $host,
+    "options" => array(
+        "username" => $user,
+        "password" => $pass
+    )
+);
+
+ioSetMongoConnection("crm", $connection, $connection);
+
+$err = null;
+$mongo = ioGetMongoConnection("crm", "read", $err);
+
+if (!$mongo) {
+    fwrite(STDERR, "ERROR: MongoDB connection failed: " . $err . "\n");
+    exit(1);
+}
+
+$db = $mongo->selectDB("crm");
+$outDir = "/tmp/crm-export";
+
+if (!is_dir($outDir) && !mkdir($outDir, 0775, true)) {
+    fwrite(STDERR, "ERROR: Cannot create directory " . $outDir . "\n");
+    exit(1);
+}
+
+$collections = array(
+    "database",
+    "client",
+    "list",
+    "clientHistory",
+    "databasePerm",
+    "relation_type"
+);
+
+foreach ($collections as $name) {
+    echo "Exporting " . $name . "...\n";
+
+    $collection = $db->selectCollection($name);
+    $cursor = $collection->find();
+
+    $file = $outDir . "/" . $name . ".jsonl";
+    $tmpFile = $file . ".part";
+    $handle = fopen($tmpFile, "wb");
+
+    if (!$handle) {
+        fwrite(STDERR, "ERROR: Cannot open " . $tmpFile . "\n");
+        exit(1);
+    }
+
+    $count = 0;
+
+    foreach ($cursor as $document) {
+        $json = json_encode($document);
+
+        if ($json === false) {
+            fclose($handle);
+            fwrite(STDERR, "ERROR: JSON encoding failed in " . $name .
+                " near record " . ($count + 1) . "\n");
+            exit(1);
+        }
+
+        if (fwrite($handle, $json . "\n") === false) {
+            fclose($handle);
+            fwrite(STDERR, "ERROR: Write failed: " . $tmpFile . "\n");
+            exit(1);
+        }
+
+        $count++;
+
+        if ($count % 100000 === 0) {
+            echo "  " . $name . ": " . $count . " documents\n";
+        }
+    }
+
+    fclose($handle);
+
+    if (!rename($tmpFile, $file)) {
+        fwrite(STDERR, "ERROR: Cannot finalize " . $file . "\n");
+        exit(1);
+    }
+
+    echo "DONE: " . $name . " — " . $count . " documents; " .
+        $file . "\n";
+}
+
+echo "EXPORT COMPLETE: " . $outDir . "\n";
+PHP
+
+docker exec dev_crm.1.l0rrgr1qhx35s6nii6zadzehz php /tmp/export-all.php
+```
+
+Этот вариант совместим с PHP 5.4: используются `array()`, нет `Throwable` и нет вызова `conf.php`.
+
+### Что делает экспортёр
+
+1. Подключает API старого CRM.
+2. Настраивает соединение с MongoDB через переменные окружения контейнера.
+3. Выбирает базу `crm`.
+4. Последовательно читает шесть указанных коллекций.
+5. Сохраняет каждый документ как отдельную JSON-строку.
+6. Пишет сначала во временный файл `.part`, а после завершения переименовывает его в итоговый `.jsonl`.
+7. Выводит количество выгруженных документов.
+
+Предупреждение `IOSERVER` из `/var/www/html/app/io/db.php`, которое появлялось при проверке, само по себе не остановило экспорт. Однако любые сообщения `ERROR`, отсутствие `EXPORT COMPLETE` или незавершённые файлы `.part` требуют проверки результата.
+
+---
+
+## 7. Проверить результат экспорта
+
+После завершения:
+
+```bash
+docker exec dev_crm.1.l0rrgr1qhx35s6nii6zadzehz \
+sh -lc 'ls -lh /tmp/crm-export'
+```
+
+Посчитать строки во всех файлах:
+
+```bash
+docker exec dev_crm.1.l0rrgr1qhx35s6nii6zadzehz \
+sh -lc 'wc -l /tmp/crm-export/*.jsonl'
+```
+
+Одна строка должна соответствовать одному документу. Сравнить количества с итогами экспортёра.
+
+В нашем тестовом запуске было получено:
+
+- `database`: 201 документ;
+- `client`: 975 109 документов;
+- `list`: 109 документов;
+- `clientHistory`: 461 документ.
+
+Количество записей `databasePerm` и `relation_type` нужно брать из итогового вывода соответствующего запуска или из `wc -l`, не предполагать заранее.
+
+Дополнительно проверить, что файл истории действий не создан:
+
+```bash
+docker exec dev_crm.1.l0rrgr1qhx35s6nii6zadzehz \
+sh -lc 'test ! -e /tmp/crm-export/actionHistory.jsonl && echo "OK: actionHistory excluded"'
+```
+
+Если экспорт прервался, не считать `.part` готовым файлом и не передавать его на импорт.
+
+---
+
+## 8. Скопировать выгрузку из контейнера в постоянное хранилище
+
+`/tmp` — временное хранилище. В нашем окружении файлы старого экспорта уже пропадали после перезапуска контейнеров, поэтому после успешной проверки нужно вынести их из контейнера.
+
+Например, если на хосте подходит каталог `/srv/projects/crm/export`:
+
+```bash
+mkdir -p /srv/projects/crm/export
+docker cp dev_crm.1.l0rrgr1qhx35s6nii6zadzehz:/tmp/crm-export/. /srv/projects/crm/export/
+```
+
+Проверить файлы на хосте:
+
+```bash
+ls -lh /srv/projects/crm/export
+wc -l /srv/projects/crm/export/*.jsonl
+```
+
+На проде использовать постоянный каталог с достаточным свободным местом и правами доступа. Перед копированием убедиться, что это правильный сервер и место хранения.
+
+**Не удалять контейнерные файлы, пока не проверено, что копия на хосте существует и её размеры совпадают.** Для дополнительной проверки можно сравнить контрольные суммы `sha256sum` исходных файлов и копий.
+
+---
+
+## 9. Что должно остаться в итоге
+
+В постоянной папке должны лежать шесть файлов:
+
+```text
+database.jsonl
+client.jsonl
+list.jsonl
+clientHistory.jsonl
+databasePerm.jsonl
+relation_type.jsonl
+```
+
+Файла `actionHistory.jsonl` быть не должно.
+
+Экспорт — это только первый этап миграции. После него отдельно проверяются структура JSON и соответствие ожидаемым полям, затем готовится безопасный импорт в новую CRM/MySQL. **Не запускать старый импортёр без проверки:** в предыдущей попытке он остановился на ошибке дублирующегося первичного ключа, поэтому повторный запуск на частично заполненной базе может привести к новым конфликтам.
+
+---
+
+## 10. Краткий чек-лист для прода
+
+1. Найти актуальный контейнер старого CRM и проверить PHP/MongoDB-драйвер.
+2. Проверить переменные `MONGO_HOST`, `MONGO_USER`, `MONGO_PASSWORD`.
+3. Создать `/tmp/crm-export` внутри контейнера.
+4. Запустить приведённый экспортёр с шестью коллекциями — без `actionHistory`.
+5. Убедиться, что получено `EXPORT COMPLETE`, и проверить строки/размеры файлов.
+6. Скопировать шесть JSONL-файлов в постоянное хранилище.
+7. Проверить копию и только после этого переходить к подготовке импорта в новую CRM.
