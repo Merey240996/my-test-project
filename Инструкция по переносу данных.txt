@@ -357,6 +357,43 @@ relation_type.jsonl
 
 mkdir -p /srv/projects/crm/export && docker cp dev_crm.1.l0rrgr1qhx35s6nii6zadzehz:/tmp/crm-export/. /srv/projects/crm/export/
 
+
+## Шаг 3. Очистка таблиц перед повторным импортом
+
+Перед повторным импортом очистить таблицы, в которые загружались данные из MongoDB. Целевая база — `crm2`.
+
+Таблицы для очистки:
+
+1. `client_field_values`
+2. `clients`
+3. `client_base_fields`
+4. `client_base_permissions`
+5. `client_bases`
+6. `dictionary_values`
+7. `dictionaries`
+
+Выполнить SQL:
+
+```sql
+SET FOREIGN_KEY_CHECKS = 0;
+
+TRUNCATE TABLE client_field_values;
+TRUNCATE TABLE clients;
+TRUNCATE TABLE client_base_fields;
+TRUNCATE TABLE client_base_permissions;
+TRUNCATE TABLE client_bases;
+TRUNCATE TABLE dictionary_values;
+TRUNCATE TABLE dictionaries;
+
+SET FOREIGN_KEY_CHECKS = 1;
+```
+
+**Важно:**
+- Убедиться, что подключение выполнено именно к тестовой базе `crm2`.
+- Команды `TRUNCATE` полностью удаляют данные из указанных таблиц и сбрасывают счётчики `AUTO_INCREMENT`.
+- Не использовать `DROP TABLE`: структуру таблиц необходимо сохранить.
+- Не очищать другие таблицы, включая таблицы истории, без отдельного анализа.
+- После очистки проверить, что все 7 таблиц пусты, и только затем начинать импорт по этапам.
 Проверить наличие файлов и общий размер:
 
 du -sh /srv/projects/crm/export && ls -lh /srv/projects/crm/export/
