@@ -1,0 +1,1527 @@
+ПОЛНАЯ ИНСТРУКЦИЯ: MongoDB (старая CRM) -> MySQL (новая CRM)
+Версия: 2026-11-05. Основа: ZIP my-test-project-main.zip, две инструкции и шесть PHP-файлов.
+
+ВНИМАНИЕ: Это инструкция для контролируемой миграции в НОВУЮ ПУСТУЮ ЦЕЛЕВУЮ БАЗУ, не для перезаписи действующей crm2. Скрипты 01/02/03/05 не являются полностью идемпотентными. После частичного импорта не перезапускать их без восстановления целевой базы. Остановить запись в старую CRM на время финального экспорта. Подготовить резервные копии и проверить восстановление. Без этого нельзя безопасно переключать прод.
+
+Что изменено относительно архива: 04_import_clients.php теперь сразу заменяет legacy pos на текст по (dictionary_pkid, pos) и содержит четыре подтверждённых исключения. Поэтому массовый UPDATE через check_dictionary_mapping.php больше не требуется. Непонятные 13-16-значные значения сохраняются как есть и считаются в отчёте; при их наличии переключение на прод запрещено до расследования. Неизвестные соответствия НЕ угадываются. Прямое объединение по foreignPkid запрещено из-за конфликтов.
+
+Проверенные результаты старого теста (не норма для нового прода): 201 база, 2050 полей, 109 справочников, 1449 вариантов, 740 разрешений, 973036 клиентов, 2981282 значения полей, 341896 контактов. В старом тесте 2073 некорректных строки клиентов, 1496 ссылок клиентов на отсутствующие базы, 7101 несопоставленных legacy значений списков. Эти проблемы не исчезнут автоматически из-за изменения скрипта.
+
+Границы миграции: экспортируем database, client, list, databasePerm, clientHistory, relation_type. Импортируем первые четыре, контакты формируем из client.jsonl. История clientHistory и relation_type сохраняются только в JSONL; отдельного импортёра в архиве нет. actionHistory, crmInvoices, io_sequence не включены.
+
+СОГЛАШЕНИЯ:
+OLD_CRM_CONTAINER — реальное имя контейнера старой CRM.
+MIGRATION_TARGET_DB — обязательный плейсхолдер, его надо заменить во ВСЕХ пяти PHP-файлах на имя НОВОЙ ПУСТОЙ БД. Пока не заменено, запуск запрещён.
+Пути из проверенного окружения: /srv/projects/crm/export (JSONL), /srv/projects/mf/crm/src/export (PHP), /srv/projects/mf/crm/src/.env (MySQL credentials).
+Команды ниже выполнять в Linux shell; SQL — в Adminer/MySQL.
+
+ЭТАП 0. ПРОВЕРКА И ОКНО ОБСЛУЖИВАНИЯ
+0.1. Зафиксировать выбранную целевую БД и убедиться, что это не действующая crm2. Предпочтительно создать отдельную новую базу с заранее установленной схемой новой CRM.
+0.2. Остановить запись в старую CRM и связанные фоновые задания на время финальной выгрузки. Экспортёр не создаёт snapshot MongoDB: если в процессе данные меняются, коллекции будут несогласованными.
+0.3. Сделать резервную копию исходной MongoDB и целевой MySQL, проверить возможность восстановления. Это требование для продакшена; сами скрипты резервных копий не делают.
+0.4. Убедиться в наличии свободного места, PHP 8+, расширений pdo_mysql, mbstring, Docker и SSH/rsync при переносе между хостами.
+0.5. Проверить схему таблиц: dictionaries, dictionary_values, client_bases, client_base_fields, client_base_permissions, clients, client_field_values, contacts. Скрипты НЕ создают основную схему CRM.
+0.6. Зафиксировать контрольные результаты SQL до импорта. Если таблицы содержат реальные данные, СТОП — текущий сценарий не является merge.
+
+ЭТАП 1. НАЙТИ СТАРУЮ CRM И ПРОВЕРИТЬ MONGO
+На сервере старой CRM:
+  docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' | grep -Ei 'crm|mongo'
+  OLD_CRM_CONTAINER='ВСТАВЬ_РЕАЛЬНОЕ_ИМЯ_КОНТЕЙНЕРА'
+  docker exec "$OLD_CRM_CONTAINER" sh -lc 'php -v | head -1; php -r '''echo class_exists("MongoClient") ? "MongoClient available\n" : "MongoClient missing\n";''''
+  docker exec "$OLD_CRM_CONTAINER" sh -lc 'test -n "$MONGO_HOST" && echo MONGO_HOST_OK; test -n "$MONGO_USER" && echo MONGO_USER_OK; test -n "$MONGO_PASSWORD" && echo MONGO_PASSWORD_OK'
+  docker exec "$OLD_CRM_CONTAINER" mkdir -p /tmp/crm-export
+
+На тесте использовался PHP 5.4.45 и MongoClient. НЕЛЬЗЯ подключать /var/www/html/conf.php напрямую в CLI: возникала ошибка outGenPageTime(). Экспортёр ниже использует /var/www/html/app/io/api.php и ioSetMongoConnection(). Пароли не печатать.
+
+===== СОЗДАТЬ ФАЙЛ: /tmp/export-all.php ВНУТРИ старого Docker-контейнера =====
+Команда создания: На сервере старой CRM: docker exec -i "$OLD_CRM_CONTAINER" sh -c 'cat > /tmp/export-all.php' <<'PHP'  ...содержимое ниже...  PHP
+НАЧАЛО СОДЕРЖИМОГО ФАЙЛА
+<?php
+error_reporting(E_ALL);
+ini_set("display_errors", "1");
+set_time_limit(0);
+
+require "/var/www/html/app/io/api.php";
+
+$host = getenv("MONGO_HOST");
+$user = getenv("MONGO_USER");
+$pass = getenv("MONGO_PASSWORD");
+
+if (!$host) {
+    fwrite(STDERR, "ERROR: MONGO_HOST is empty\n");
+    exit(1);
+}
+
+$connection = array(
+    "server" => "mongodb://" . $host,
+    "options" => array(
+        "username" => $user,
+        "password" => $pass
+    )
+);
+
+ioSetMongoConnection("crm", $connection, $connection);
+
+$err = null;
+$mongo = ioGetMongoConnection("crm", "read", $err);
+
+if (!$mongo) {
+    fwrite(STDERR, "ERROR: MongoDB connection failed: " . $err . "\n");
+    exit(1);
+}
+
+$db = $mongo->selectDB("crm");
+$outDir = "/tmp/crm-export";
+
+if (!is_dir($outDir) && !mkdir($outDir, 0775, true)) {
+    fwrite(STDERR, "ERROR: Cannot create directory " . $outDir . "\n");
+    exit(1);
+}
+
+$collections = array(
+    "database",
+    "client",
+    "list",
+    "clientHistory",
+    "databasePerm",
+    "relation_type"
+);
+
+foreach ($collections as $name) {
+    echo "Exporting " . $name . "...\n";
+
+    $collection = $db->selectCollection($name);
+    $cursor = $collection->find();
+
+    $file = $outDir . "/" . $name . ".jsonl";
+    $tmpFile = $file . ".part";
+    $handle = fopen($tmpFile, "wb");
+
+    if (!$handle) {
+        fwrite(STDERR, "ERROR: Cannot open " . $tmpFile . "\n");
+        exit(1);
+    }
+
+    $count = 0;
+
+    foreach ($cursor as $document) {
+        $json = json_encode($document);
+
+        if ($json === false) {
+            fclose($handle);
+            fwrite(STDERR, "ERROR: JSON encoding failed in " . $name .
+                " near record " . ($count + 1) . "\n");
+            exit(1);
+        }
+
+        if (fwrite($handle, $json . "\n") === false) {
+            fclose($handle);
+            fwrite(STDERR, "ERROR: Write failed: " . $tmpFile . "\n");
+            exit(1);
+        }
+
+        $count++;
+
+        if ($count % 100000 === 0) {
+            echo "  " . $name . ": " . $count . " documents\n";
+        }
+    }
+
+    fclose($handle);
+
+    if (!rename($tmpFile, $file)) {
+        fwrite(STDERR, "ERROR: Cannot finalize " . $file . "\n");
+        exit(1);
+    }
+
+    echo "DONE: " . $name . " — " . $count . " documents; " .
+        $file . "\n";
+}
+
+echo "EXPORT COMPLETE: " . $outDir . "\n";
+КОНЕЦ СОДЕРЖИМОГО ФАЙЛА
+
+Создать файл на сервере как /tmp/export-all.php (локально) и скопировать внутрь контейнера:
+  docker cp /tmp/export-all.php "$OLD_CRM_CONTAINER":/tmp/export-all.php
+Либо использовать heredoc выше. НЕ запускать оба варианта одновременно.
+Запуск:
+  docker exec "$OLD_CRM_CONTAINER" php /tmp/export-all.php
+Ожидается EXPORT COMPLETE. При ошибке файл *.part не использовать.
+Проверка:
+  docker exec "$OLD_CRM_CONTAINER" sh -lc 'ls -lh /tmp/crm-export; wc -l /tmp/crm-export/*.jsonl'
+Скопировать на сервер старой CRM:
+  mkdir -p /srv/projects/crm/export
+  docker cp "$OLD_CRM_CONTAINER":/tmp/crm-export/. /srv/projects/crm/export/
+Если новая CRM на другом хосте, перенести файлы rsync (подставить SSH_USER и NEW_HOST):
+  rsync -avh --progress /srv/projects/crm/export/ SSH_USER@NEW_HOST:/srv/projects/crm/export/
+Проверить контрольные суммы sha256sum *.jsonl на обеих сторонах, количество строк wc -l, отсутствие *.part и корректность JSONL.
+Примечание: экспортёр пишет json_encode каждого Mongo-документа, а не Mongo Extended JSON; формат совместим с PHP-импортёрами из архива.
+
+ЭТАП 2. ПОДГОТОВКА НОВОЙ CRM
+На сервере новой CRM:
+  cd /srv/projects/mf/crm/src
+  mkdir -p export
+  php -v
+  php -m | grep -Ei 'pdo_mysql|mbstring'
+  ls -lh /srv/projects/crm/export/{list,database,databasePerm,client}.jsonl
+  test -r .env && echo ENV_OK
+
+Создать ПЯТЬ PHP-файлов в каталоге /srv/projects/mf/crm/src/export/ из разделов ниже. Можно вставить содержимое между маркерами НАЧАЛО/КОНЕЦ в редактор. Сами маркеры не включать в PHP.
+
+ЗАМЕНИТЬ во всех файлах MIGRATION_TARGET_DB на точное имя новой ПУСТОЙ базы (без пробелов и кавычек). В 05 имя задаётся константой DB_NAME; в остальных переменной $targetDb. Не изменять .env ради выбора БД. Проверка:
+  grep -nE 'targetDb|DB_NAME' export/{01,02,03,04,05}_*.php
+  grep -R -n 'MIGRATION_TARGET_DB' export/  # ДОЛЖНО БЫТЬ ПУСТО
+  for f in export/{01,02,03,04,05}_*.php; do php -l "$f" || exit 1; done
+
+Контрольная SQL-проверка (в выбранной БД):
+SELECT DATABASE();
+SELECT (SELECT COUNT(*) FROM dictionaries) AS dictionaries,
+       (SELECT COUNT(*) FROM dictionary_values) AS dictionary_values,
+       (SELECT COUNT(*) FROM client_bases) AS bases,
+       (SELECT COUNT(*) FROM client_base_fields) AS fields,
+       (SELECT COUNT(*) FROM client_base_permissions) AS permissions,
+       (SELECT COUNT(*) FROM clients) AS clients,
+       (SELECT COUNT(*) FROM client_field_values) AS field_values,
+       (SELECT COUNT(*) FROM contacts) AS contacts;
+Если целевые таблицы не пусты, не запускать импорт без отдельного согласованного плана.
+
+===== СОЗДАТЬ ФАЙЛ: /srv/projects/mf/crm/src/export/01_import_dictionaries.php =====
+Команда создания: Создать через редактор (nano/vim) в указанном пути, вставить весь PHP-код между маркерами
+НАЧАЛО СОДЕРЖИМОГО ФАЙЛА
+<?php
+
+declare(strict_types=1);
+
+$projectDir = '/srv/projects/mf/crm/src';
+$envFile = $projectDir . '/.env';
+$targetDb = 'MIGRATION_TARGET_DB';
+$sourceFile = '/srv/projects/crm/export/list.jsonl';
+
+if (!is_file($envFile) || !is_readable($envFile)) {
+    exit("ERROR: .env не найден или недоступен\n");
+}
+if (!is_file($sourceFile) || !is_readable($sourceFile)) {
+    exit("ERROR: list.jsonl не найден или недоступен\n");
+}
+
+$env = [];
+foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+    $line = trim($line);
+    if ($line === '' || $line[0] === '#' || strpos($line, '=') === false) {
+        continue;
+    }
+    [$key, $value] = explode('=', $line, 2);
+    $env[trim($key)] = trim(trim($value), "\"'");
+}
+
+$host = $env['MYSQL_HOST'] ?? '';
+$port = $env['MYSQL_PORT'] ?? '3306';
+$user = $env['MYSQL_USER'] ?? '';
+$password = $env['MYSQL_PASSWORD'] ?? '';
+
+if ($host === '' || $user === '') {
+    exit("ERROR: не найдены MYSQL_HOST или MYSQL_USER\n");
+}
+
+$pdo = new PDO(
+    "mysql:host={$host};port={$port};dbname={$targetDb};charset=utf8mb4",
+    $user,
+    $password,
+    [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]
+);
+
+function legacyDateTime(array $row, string $field): string
+{
+    $value = $row[$field] ?? null;
+    if (!$value) {
+        return '1970-01-01 00:00:00';
+    }
+
+    $timestamp = strtotime((string)$value);
+    return $timestamp === false
+        ? '1970-01-01 00:00:00'
+        : gmdate('Y-m-d H:i:s', $timestamp);
+}
+
+function legacyTimestamp(array $row, string $field): int
+{
+    $value = $row[$field] ?? null;
+    return ($value === null || $value === '') ? 0 : max(0, (int)$value);
+}
+
+$insertDictionary = $pdo->prepare(
+    'INSERT INTO dictionaries
+    (pkid, company_pkid, name, description, is_deleted,
+     gmtimeAdd, gmtimeChange, ugmtimeAdd, ugmtimeChange)
+    VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)
+    ON DUPLICATE KEY UPDATE
+        company_pkid = VALUES(company_pkid),
+        name = VALUES(name),
+        is_deleted = VALUES(is_deleted),
+        gmtimeAdd = VALUES(gmtimeAdd),
+        gmtimeChange = VALUES(gmtimeChange),
+        ugmtimeAdd = VALUES(ugmtimeAdd),
+        ugmtimeChange = VALUES(ugmtimeChange)'
+);
+
+$insertValue = $pdo->prepare(
+    'INSERT INTO dictionary_values
+    (company_pkid, dictionary_pkid, value, sortOrder,
+     is_deleted, gmtimeAdd, gmtimeChange, ugmtimeAdd, ugmtimeChange)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+);
+
+$dictionaryCount = 0;
+$valueCount = 0;
+$skippedValues = 0;
+$lineNumber = 0;
+
+$pdo->beginTransaction();
+
+try {
+    $handle = fopen($sourceFile, 'rb');
+
+    while (($line = fgets($handle)) !== false) {
+        $lineNumber++;
+
+        if (trim($line) === '') {
+            continue;
+        }
+
+        $row = json_decode($line, true);
+        if (!is_array($row) || !isset($row['pkid'])) {
+            throw new RuntimeException("Некорректная запись, строка {$lineNumber}");
+        }
+
+        $dictionaryId = (int)$row['pkid'];
+        $companyId = (int)($row['userCompanyId'] ?? 0);
+
+        if ($dictionaryId <= 0 || $companyId < 0) {
+            throw new RuntimeException("Некорректные ID, строка {$lineNumber}");
+        }
+
+        $added = legacyDateTime($row, 'gmtimeAdd');
+        $changed = legacyDateTime($row, 'gmtimeChange');
+        $addedTs = legacyTimestamp($row, 'ugmtimeAdd');
+        $changedTs = legacyTimestamp($row, 'ugmtimeChange');
+
+        $insertDictionary->execute([
+            $dictionaryId,
+            $companyId,
+            mb_substr((string)($row['name'] ?? ''), 0, 255),
+            !empty($row['isDeleted']) ? 1 : 0,
+            $added,
+            $changed,
+            $addedTs,
+            $changedTs,
+        ]);
+
+        $dictionaryCount++;
+
+        $items = $row['data'] ?? [];
+        if (!is_array($items)) {
+            $skippedValues++;
+            continue;
+        }
+
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                $skippedValues++;
+                continue;
+            }
+
+            $value = $item['data'] ?? null;
+            if ($value === null || trim((string)$value) === '') {
+                $skippedValues++;
+                continue;
+            }
+
+            $value = mb_substr((string)$value, 0, 255);
+            $position = $item['pos'] ?? null;
+            $sortOrder = is_numeric($position) ? (int)$position : 0;
+            $isDeleted = !empty($item['isDeleted']) ? 1 : 0;
+
+            $insertValue->execute([
+                $companyId,
+                $dictionaryId,
+                $value,
+                $sortOrder,
+                $isDeleted,
+                $added,
+                $changed,
+                $addedTs,
+                $changedTs,
+            ]);
+
+            $valueCount++;
+        }
+    }
+
+    fclose($handle);
+    $pdo->commit();
+
+    echo "Импорт завершён\n";
+    echo "Справочников обработано: {$dictionaryCount}\n";
+    echo "Значений добавлено: {$valueCount}\n";
+    echo "Пустых или пропущенных значений: {$skippedValues}\n";
+    echo "Целевая БД: {$targetDb}\n";
+} catch (Throwable $e) {
+    if (isset($handle) && is_resource($handle)) {
+        fclose($handle);
+    }
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+
+    fwrite(STDERR, "ERROR, строка {$lineNumber}: {$e->getMessage()}\n");
+    exit(1);
+}
+КОНЕЦ СОДЕРЖИМОГО ФАЙЛА
+
+===== СОЗДАТЬ ФАЙЛ: /srv/projects/mf/crm/src/export/02_import_bases.php =====
+Команда создания: Создать через редактор (nano/vim) в указанном пути, вставить весь PHP-код между маркерами
+НАЧАЛО СОДЕРЖИМОГО ФАЙЛА
+<?php
+
+declare(strict_types=1);
+
+$envFile = '/srv/projects/mf/crm/src/.env';
+$sourceFile = '/srv/projects/crm/export/database.jsonl';
+$targetDb = 'MIGRATION_TARGET_DB';
+
+if (!is_readable($envFile) || !is_readable($sourceFile)) {
+    exit("ERROR: .env или database.jsonl недоступен\n");
+}
+
+$env = [];
+foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+    $line = trim($line);
+
+    if ($line === '' || $line[0] === '#' || strpos($line, '=') === false) {
+        continue;
+    }
+
+    [$key, $value] = explode('=', $line, 2);
+    $env[trim($key)] = trim(trim($value), "\"'");
+}
+
+$host = $env['MYSQL_HOST'] ?? '';
+$port = $env['MYSQL_PORT'] ?? '3306';
+$user = $env['MYSQL_USER'] ?? '';
+$password = $env['MYSQL_PASSWORD'] ?? '';
+
+if ($host === '' || $user === '') {
+    exit("ERROR: не найдены MYSQL_HOST или MYSQL_USER\n");
+}
+
+$pdo = new PDO(
+    "mysql:host={$host};port={$port};dbname={$targetDb};charset=utf8mb4",
+    $user,
+    $password,
+    [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+    ]
+);
+
+function legacyDateTime(array $row, string $field, string $fallback = '1970-01-01 00:00:00'): string
+{
+    $value = $row[$field] ?? null;
+
+    if (!$value) {
+        return $fallback;
+    }
+
+    $timestamp = strtotime((string)$value);
+
+    return $timestamp === false ? $fallback : gmdate('Y-m-d H:i:s', $timestamp);
+}
+
+function legacyTimestamp(array $row, string $field, int $fallback = 0): int
+{
+    $value = $row[$field] ?? null;
+
+    if ($value === null || $value === '') {
+        return $fallback;
+    }
+
+    if (is_numeric($value)) {
+        return max(0, (int)$value);
+    }
+
+    $timestamp = strtotime((string)$value);
+
+    return $timestamp === false ? $fallback : max(0, $timestamp);
+}
+
+$typeMap = [
+    1  => 1,  // Строка
+    2  => 2,  // Текст
+    3  => 3,  // Дата
+    6  => 2,  // История и произвольный текст
+    7  => 5,  // Справочник
+    8  => 6,  // Телефон
+    9  => 7,  // E-mail
+    10 => 8,  // Денежные значения
+    11 => 2,  // Город
+    12 => 2,  // Страна
+    18 => 2,  // Кто зарегистрировал
+    19 => 10, // Файл
+    20 => 9,  // Изображение
+    21 => 10, // Файл
+];
+
+$baseInsert = $pdo->prepare(
+    'INSERT INTO client_bases
+    (pkid, company_pkid, name, is_company, is_deleted,
+     gmtimeAdd, gmtimeChange, ugmtimeAdd, ugmtimeChange)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+);
+
+$fieldInsert = $pdo->prepare(
+    'INSERT INTO client_base_fields
+    (company_pkid, base_pkid, name, fieldType, dictionary_pkid,
+     is_hidden, show_in_mobile, is_searchable, sortOrder, is_deleted,
+     gmtimeAdd, gmtimeChange, ugmtimeAdd, ugmtimeChange)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+);
+
+$baseCount = 0;
+$fieldCount = 0;
+$unknownTypes = [];
+$lineNumber = 0;
+$handle = null;
+
+$pdo->beginTransaction();
+
+try {
+    $handle = fopen($sourceFile, 'rb');
+
+    if (!$handle) {
+        throw new RuntimeException('Не удалось открыть database.jsonl');
+    }
+
+    while (($line = fgets($handle)) !== false) {
+        $lineNumber++;
+
+        if (trim($line) === '') {
+            continue;
+        }
+
+        $doc = json_decode($line, true);
+
+        if (!is_array($doc) || !isset($doc['pkid'])) {
+            throw new RuntimeException("Некорректный JSON или отсутствует pkid");
+        }
+
+        $baseId = (int)$doc['pkid'];
+        $companyId = (int)($doc['userCompanyId'] ?? 0);
+
+        if ($baseId <= 0 || $companyId < 0) {
+            throw new RuntimeException('Некорректный ID базы или компании');
+        }
+
+        $baseAdd = legacyDateTime($doc, 'gmtimeAdd');
+        $baseChange = legacyDateTime($doc, 'gmtimeChange', $baseAdd);
+        $baseAddTs = legacyTimestamp($doc, 'ugmtimeAdd');
+        $baseChangeTs = legacyTimestamp($doc, 'ugmtimeChange', $baseAddTs);
+
+        $baseInsert->execute([
+            $baseId,
+            $companyId,
+            mb_substr((string)($doc['name'] ?? $doc['api_name'] ?? 'Без названия'), 0, 255),
+            !empty($doc['isCompany']) ? 1 : 0,
+            !empty($doc['isDeleted']) ? 1 : 0,
+            $baseAdd,
+            $baseChange,
+            $baseAddTs,
+            $baseChangeTs,
+        ]);
+
+        $baseCount++;
+
+        $fields = $doc['fields'] ?? [];
+
+        if (!is_array($fields)) {
+            continue;
+        }
+
+        foreach ($fields as $index => $field) {
+            if (!is_array($field) || !isset($field['pos'])) {
+                continue;
+            }
+
+            // pos — ID поля; foreignPkid — ID родительской базы.
+            $fieldId = (int)$field['pos'];
+
+            if ($fieldId <= 0) {
+                continue;
+            }
+
+            $legacyType = isset($field['type']) ? (int)$field['type'] : null;
+
+            if ($legacyType !== null && isset($typeMap[$legacyType])) {
+                $fieldType = $typeMap[$legacyType];
+            } else {
+                $fieldType = 2;
+                $unknownTypes[(string)$legacyType] = ($unknownTypes[(string)$legacyType] ?? 0) + 1;
+            }
+
+            $listId = $field['list'] ?? null;
+            $dictionaryId = null;
+
+            if ($listId !== null && $listId !== '') {
+                $dictionaryId = (int)$listId;
+
+                // Не создаём ссылку на несуществующий справочник.
+                $check = $pdo->prepare('SELECT 1 FROM dictionaries WHERE pkid = ?');
+                $check->execute([$dictionaryId]);
+
+                if (!$check->fetchColumn()) {
+                    $dictionaryId = null;
+                }
+            }
+
+            $fieldAdd = legacyDateTime($field, 'gmtimeAdd', $baseAdd);
+            $fieldChange = legacyDateTime($field, 'gmtimeChange', $baseChange);
+            $fieldAddTs = legacyTimestamp($field, 'ugmtimeAdd', $baseAddTs);
+            $fieldChangeTs = legacyTimestamp($field, 'ugmtimeChange', $baseChangeTs);
+
+            $fieldInsert->execute([
+                $companyId,
+                $baseId,
+                mb_substr((string)($field['name'] ?? $field['api_name'] ?? 'Без названия'), 0, 255),
+                $fieldType,
+                $dictionaryId,
+                !empty($field['hidden']) ? 1 : 0,
+                !empty($field['mobileSearchVisible']) ? 1 : 0,
+                !empty($field['search']) ? 1 : 0,
+                is_numeric($index) ? (int)$index : 0,
+                !empty($field['isDeleted']) ? 1 : 0,
+                $fieldAdd,
+                $fieldChange,
+                $fieldAddTs,
+                $fieldChangeTs,
+            ]);
+
+            $fieldCount++;
+        }
+    }
+
+    fclose($handle);
+    $handle = null;
+
+    $pdo->commit();
+
+    echo "Импорт баз и полей завершён\n";
+    echo "Баз обработано: {$baseCount}\n";
+    echo "Полей импортировано: {$fieldCount}\n";
+    echo "Целевая БД: {$targetDb}\n";
+
+    if ($unknownTypes) {
+        echo "Неизвестные типы полей (пока преобразованы в текст): "
+            . json_encode($unknownTypes, JSON_UNESCAPED_UNICODE) . "\n";
+    }
+} catch (Throwable $e) {
+    if (is_resource($handle)) {
+        fclose($handle);
+    }
+
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+
+    fwrite(STDERR, "ERROR, строка {$lineNumber}: {$e->getMessage()}\n");
+    exit(1);
+}
+КОНЕЦ СОДЕРЖИМОГО ФАЙЛА
+
+===== СОЗДАТЬ ФАЙЛ: /srv/projects/mf/crm/src/export/03_import_permissions.php =====
+Команда создания: Создать через редактор (nano/vim) в указанном пути, вставить весь PHP-код между маркерами
+НАЧАЛО СОДЕРЖИМОГО ФАЙЛА
+<?php
+
+declare(strict_types=1);
+
+$projectDir = '/srv/projects/mf/crm/src';
+$sourceFile = '/srv/projects/crm/export/databasePerm.jsonl';
+$targetDb = 'MIGRATION_TARGET_DB';
+
+function readEnvFile(string $path): array
+{
+    $result = [];
+    foreach (file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#') || !str_contains($line, '=')) {
+            continue;
+        }
+
+        [$key, $value] = explode('=', $line, 2);
+        $result[trim($key)] = trim(trim($value), "\"'");
+    }
+    return $result;
+}
+
+function toDateTime(mixed $value): string
+{
+    if (!is_string($value) || trim($value) === '') {
+        return '1970-01-01 00:00:00';
+    }
+
+    $timestamp = strtotime($value);
+    return $timestamp === false
+        ? '1970-01-01 00:00:00'
+        : gmdate('Y-m-d H:i:s', $timestamp);
+}
+
+$env = readEnvFile($projectDir . '/.env');
+
+$pdo = new PDO(
+    sprintf(
+        'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
+        $env['MYSQL_HOST'] ?? '127.0.0.1',
+        $env['MYSQL_PORT'] ?? '3306',
+        $targetDb
+    ),
+    $env['MYSQL_USER'] ?? '',
+    $env['MYSQL_PASSWORD'] ?? '',
+    [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_EMULATE_PREPARES => false,
+    ]
+);
+
+if (!is_file($sourceFile)) {
+    throw new RuntimeException("Файл не найден: {$sourceFile}");
+}
+
+$baseCheck = $pdo->prepare(
+    'SELECT pkid FROM client_bases WHERE pkid = ?'
+);
+
+$insert = $pdo->prepare(
+    'INSERT IGNORE INTO client_base_permissions
+    (company_pkid, base_pkid, role_pkid, is_deleted,
+     gmtimeAdd, gmtimeChange, ugmtimeAdd, ugmtimeChange)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+);
+
+$processed = 0;
+$imported = 0;
+$skipped = 0;
+
+$pdo->beginTransaction();
+
+try {
+    $handle = fopen($sourceFile, 'rb');
+
+    if ($handle === false) {
+        throw new RuntimeException("Не удалось открыть: {$sourceFile}");
+    }
+
+    while (($line = fgets($handle)) !== false) {
+        if (trim($line) === '') {
+            continue;
+        }
+
+        $row = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
+        $processed++;
+
+        $baseId = (int)($row['databasePkid'] ?? 0);
+        $roleId = (int)($row['account_pkid'] ?? 0);
+        $companyId = (int)($row['userCompanyId'] ?? 1);
+
+        if ($baseId <= 0 || $roleId <= 0) {
+            $skipped++;
+            continue;
+        }
+
+        $baseCheck->execute([$baseId]);
+
+        if (!$baseCheck->fetchColumn()) {
+            $skipped++;
+            continue;
+        }
+
+        $insert->execute([
+            $companyId > 0 ? $companyId : 1,
+            $baseId,
+            $roleId,
+            !empty($row['isDeleted']) ? 1 : 0,
+            toDateTime($row['gmtimeAdd'] ?? null),
+            toDateTime($row['gmtimeChange'] ?? null),
+            max(0, (int)($row['ugmtimeAdd'] ?? 0)),
+            max(0, (int)($row['ugmtimeChange'] ?? 0)),
+        ]);
+
+        if ($insert->rowCount() > 0) {
+            $imported++;
+        } else {
+            $skipped++;
+        }
+    }
+
+    fclose($handle);
+    $pdo->commit();
+} catch (Throwable $e) {
+    if (isset($handle) && is_resource($handle)) {
+        fclose($handle);
+    }
+
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+
+    throw $e;
+}
+
+echo "Импорт прав завершён\n";
+echo "Строк обработано: {$processed}\n";
+echo "Связей импортировано: {$imported}\n";
+echo "Пропущено: {$skipped}\n";
+echo "Целевая БД: {$targetDb}\n";
+КОНЕЦ СОДЕРЖИМОГО ФАЙЛА
+
+===== СОЗДАТЬ ФАЙЛ: /srv/projects/mf/crm/src/export/04_import_clients.php =====
+Команда создания: Создать через редактор (nano/vim) в указанном пути, вставить весь PHP-код между маркерами
+НАЧАЛО СОДЕРЖИМОГО ФАЙЛА
+<?php
+declare(strict_types=1);
+
+$startedAt = microtime(true);
+$sourceFile = '/srv/projects/crm/export/client.jsonl';
+$basesFile  = '/srv/projects/crm/export/database.jsonl';
+$listFile   = '/srv/projects/crm/export/list.jsonl';
+$envFile    = '/srv/projects/mf/crm/src/.env';
+$errorFile  = __DIR__ . '/04_import_clients_errors.log';
+$targetDb   = 'crm2_old_20261020';
+
+const CLIENT_BATCH_SIZE = 500;
+const VALUE_BATCH_SIZE = 2000;
+const COMMIT_EVERY = 5000;
+
+if (!is_file($sourceFile) || !is_file($basesFile) || !is_file($listFile) || !is_file($envFile)) {
+    exit("ERROR: не найден файл импорта или .env\n");
+}
+
+file_put_contents(
+    $errorFile,
+    'Импорт начат: ' . date('Y-m-d H:i:s') . PHP_EOL
+);
+
+$env = [];
+foreach (file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+    $line = trim($line);
+    if ($line === '' || $line[0] === '#' || !str_contains($line, '=')) {
+        continue;
+    }
+
+    [$key, $value] = explode('=', $line, 2);
+    $env[trim($key)] = trim(trim($value), "\"'");
+}
+
+$host = $env['MYSQL_HOST'] ?? '127.0.0.1';
+$port = $env['MYSQL_PORT'] ?? '3306';
+$user = $env['MYSQL_USER'] ?? '';
+$pass = $env['MYSQL_PASSWORD'] ?? '';
+
+$pdo = new PDO(
+    "mysql:host={$host};port={$port};dbname={$targetDb};charset=utf8mb4",
+    $user,
+    $pass,
+    [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_EMULATE_PREPARES => true,
+        PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => true,
+    ]
+);
+
+$pdo->exec('SET SESSION foreign_key_checks = 0');
+$pdo->exec('SET SESSION unique_checks = 0');
+
+function logError(string $message): void
+{
+    global $errorFile;
+
+    file_put_contents(
+        $errorFile,
+        '[' . date('Y-m-d H:i:s') . '] ' . $message . PHP_EOL,
+        FILE_APPEND
+    );
+}
+
+function toDateTime(array $row, string $textKey, string $unixKey): string
+{
+    if (!empty($row[$textKey])) {
+        $timestamp = strtotime((string)$row[$textKey]);
+        if ($timestamp !== false) {
+            return date('Y-m-d H:i:s', $timestamp);
+        }
+    }
+
+    if (isset($row[$unixKey]) && is_numeric($row[$unixKey])) {
+        return date('Y-m-d H:i:s', (int)$row[$unixKey]);
+    }
+
+    return '1970-01-01 00:00:00';
+}
+
+function scalarValue($value): ?string
+{
+    if ($value === null || is_array($value) || is_object($value)) {
+        return null;
+    }
+
+    if (is_bool($value)) {
+        return $value ? '1' : '0';
+    }
+
+    $value = (string)$value;
+    return $value === '' ? null : $value;
+}
+
+function makeInsertSql(string $table, array $columns, int $rowCount): string
+{
+    $oneRow = '(' . implode(',', array_fill(0, count($columns), '?')) . ')';
+
+    return 'INSERT IGNORE INTO `' . $table . '` (`'
+        . implode('`,`', $columns) . '`) VALUES '
+        . implode(',', array_fill(0, $rowCount, $oneRow));
+}
+
+/*
+ * Пакетная вставка.
+ * При ошибке SQL выполняется fallback по одной записи,
+ * чтобы изолировать проблемные строки и продолжить импорт.
+ */
+function flushBatch(
+    PDO $pdo,
+    string $table,
+    array $columns,
+    array &$batch,
+    int &$imported,
+    int &$skipped
+): void {
+    if (!$batch) {
+        return;
+    }
+
+    $rows = $batch;
+    $batch = [];
+
+    try {
+        $sql = makeInsertSql($table, $columns, count($rows));
+        $stmt = $pdo->prepare($sql);
+
+        $params = [];
+        foreach ($rows as $item) {
+            foreach ($item['data'] as $value) {
+                $params[] = $value;
+            }
+        }
+
+        $stmt->execute($params);
+        $inserted = $stmt->rowCount();
+        $imported += $inserted;
+        $skipped += count($rows) - $inserted;
+        return;
+    } catch (Throwable $e) {
+        logError(
+            "Пачка {$table}, строк источника "
+            . $rows[0]['line'] . '-' . $rows[count($rows) - 1]['line']
+            . ': ' . $e->getMessage()
+            . '; повторная проверка по одной записи'
+        );
+    }
+
+    $placeholders = implode(',', array_fill(0, count($columns), '?'));
+    $sql = 'INSERT IGNORE INTO `' . $table . '` (`'
+        . implode('`,`', $columns) . '`) VALUES (' . $placeholders . ')';
+    $stmt = $pdo->prepare($sql);
+
+    foreach ($rows as $item) {
+        try {
+            $stmt->execute($item['data']);
+
+            if ($stmt->rowCount() > 0) {
+                $imported++;
+            } else {
+                $skipped++;
+            }
+        } catch (Throwable $e) {
+            $skipped++;
+            logError(
+                "Таблица {$table}, строка источника {$item['line']}: "
+                . $e->getMessage()
+            );
+        }
+    }
+}
+
+/*
+ * Собираем соответствие имён полей новым client_base_fields.pkid.
+ */
+$targetFields = [];
+$fieldMetadata = [];
+$dictionaryMap = [];
+$dictionaryConflicts = [];
+$unmatchedDictionaryValues = 0;
+$unmatchedDictionarySamples = [];
+$convertedDictionaryValues = 0;
+$stmt = $pdo->query(
+    'SELECT pkid, base_pkid, name, fieldType, dictionary_pkid
+     FROM client_base_fields
+     WHERE is_deleted = 0'
+);
+
+foreach ($stmt as $field) {
+    $targetFields[(string)$field['base_pkid']][(string)$field['name']]
+        = (int)$field['pkid'];
+    $fieldMetadata[(int)$field['pkid']] = [
+        'fieldType' => (int)$field['fieldType'],
+        'dictionary_pkid' => (string)($field['dictionary_pkid'] ?? ''),
+    ];
+}
+
+$fieldAliases = [];
+$handle = fopen($basesFile, 'rb');
+
+while (($line = fgets($handle)) !== false) {
+    $base = json_decode($line, true);
+
+    if (!is_array($base)) {
+        continue;
+    }
+
+    $basePkid = (string)($base['pkid'] ?? '');
+
+    if ($basePkid === '' || empty($base['fields']) || !is_array($base['fields'])) {
+        continue;
+    }
+
+    foreach ($base['fields'] as $field) {
+        if (!is_array($field)) {
+            continue;
+        }
+
+        $legacyName = (string)($field['name'] ?? '');
+        $apiName = (string)($field['api_name'] ?? '');
+
+        $newFieldPkid = null;
+
+        if ($legacyName !== '') {
+            $newFieldPkid = $targetFields[$basePkid][$legacyName] ?? null;
+        }
+
+        if ($newFieldPkid === null && $apiName !== '') {
+            $newFieldPkid = $targetFields[$basePkid][$apiName] ?? null;
+        }
+
+        if ($newFieldPkid === null) {
+            continue;
+        }
+
+        if ($legacyName !== '') {
+            $fieldAliases[$basePkid][$legacyName] = $newFieldPkid;
+        }
+
+        if ($apiName !== '') {
+            $fieldAliases[$basePkid][$apiName] = $newFieldPkid;
+        }
+    }
+}
+
+fclose($handle);
+
+/* Карта старых MongoDB pos -> отображаемый текст.
+ * Только точное совпадение dictionary_pkid + pos; foreignPkid
+ * намеренно не объединяется автоматически из-за конфликтов.
+ */
+$listHandle = fopen($listFile, 'rb');
+if ($listHandle === false) {
+    throw new RuntimeException("Cannot open {$listFile}");
+}
+while (($jsonLine = fgets($listHandle)) !== false) {
+    if (trim($jsonLine) === '') continue;
+    $dict = json_decode($jsonLine, true);
+    if (!is_array($dict) || !isset($dict['pkid'])) {
+        throw new RuntimeException('Invalid JSON in list.jsonl');
+    }
+    $dictId = (string)$dict['pkid'];
+    foreach (($dict['data'] ?? []) as $item) {
+        if (!is_array($item)) continue;
+        $pos = $item['pos'] ?? null;
+        $label = $item['data'] ?? null;
+        if ($pos === null || !is_numeric($pos) || $label === null || trim((string)$label) === '') continue;
+        $pos = (string)$pos;
+        $label = mb_substr((string)$label, 0, 255);
+        $key = $dictId . ':' . $pos;
+        if (isset($dictionaryMap[$dictId][$pos]) && $dictionaryMap[$dictId][$pos] !== $label) {
+            $dictionaryConflicts[$key] = true;
+            continue;
+        }
+        $dictionaryMap[$dictId][$pos] = $label;
+    }
+}
+fclose($listHandle);
+foreach (array_keys($dictionaryConflicts) as $key) {
+    [$dictId, $pos] = explode(':', $key, 2);
+    unset($dictionaryMap[$dictId][$pos]);
+}
+$additionalMapping = [
+    '1373481410231889' => [
+        '1373606451338444' => 'не указан',
+        '1373481557312544' => 'мужской',
+        '1373481561953757' => 'женский',
+    ],
+    '1382511204199479' => [
+        '1382700823911395' => 'не известно',
+    ],
+];
+foreach ($additionalMapping as $dictId => $items) {
+    foreach ($items as $pos => $label) {
+        if (isset($dictionaryMap[$dictId][$pos]) && $dictionaryMap[$dictId][$pos] !== $label) {
+            throw new RuntimeException("Conflicting confirmed mapping: {$dictId}/{$pos}");
+        }
+        $dictionaryMap[$dictId][$pos] = $label;
+    }
+}
+if ($dictionaryConflicts) {
+    throw new RuntimeException('Dictionary mapping conflicts: ' . count($dictionaryConflicts) .
+        '. Review list.jsonl before import; no data written.');
+}
+echo 'Dictionary maps loaded: ' . count($dictionaryMap) . "\n";
+
+$clientColumns = [
+    'pkid', 'company_pkid', 'base_pkid', 'user_pkid', 'contact_pkid',
+    'user_login', 'company', 'email', 'phone', 'date', 'is_deleted',
+    'gmtimeAdd', 'gmtimeChange', 'ugmtimeAdd', 'ugmtimeChange',
+];
+
+$valueColumns = [
+    'company_pkid', 'client_pkid', 'field_pkid', 'value', 'isDeleted',
+    'gmtimeAdd', 'gmtimeChange', 'ugmtimeAdd', 'ugmtimeChange',
+];
+
+$clientsBatch = [];
+$valuesBatch = [];
+
+$clientsImported = 0;
+$clientsSkipped = 0;
+$valuesImported = 0;
+$valuesSkipped = 0;
+$invalidRows = 0;
+$lineNo = 0;
+$lastProgress = 0;
+
+$excludedKeys = array_fill_keys([
+    '_id', 'pkid', 'database', 'historyDatabase', 'contacts',
+    'relation', 'maps_point', 'tags', 'login', 'text',
+    'client_number', 'companyPkid', 'company_name', 'fname',
+    'lname', 'sname', 'primary_login', 'operator', 'operator1',
+    'operator11', 'main_email', 'main_phone', 'userCompanyId',
+    'isDeleted', 'isDraft', 'isHash', 'isProcessEdit',
+    'gmtimeAdd', 'gmtimeChange', 'ugmtimeAdd', 'ugmtimeChange',
+    'txVersion', 'date',
+], true);
+
+$handle = fopen($sourceFile, 'rb');
+
+if (!$handle) {
+    exit("ERROR: не удалось открыть {$sourceFile}\n");
+}
+
+$pdo->beginTransaction();
+
+try {
+    while (($line = fgets($handle)) !== false) {
+        $lineNo++;
+
+        $row = json_decode($line, true);
+
+        if (!is_array($row) || !isset($row['pkid'])) {
+            $invalidRows++;
+            logError("Некорректный JSON или отсутствует pkid; строка {$lineNo}");
+            continue;
+        }
+
+        $clientPkid = (int)$row['pkid'];
+        $basePkid = (int)($row['database'][0] ?? 0);
+
+        if ($clientPkid <= 0 || $basePkid <= 0) {
+            $invalidRows++;
+            logError("Некорректный pkid/base_pkid; строка {$lineNo}");
+            continue;
+        }
+
+        $companyPkid = (int)($row['userCompanyId'] ?? $row['companyPkid'] ?? 1);
+        if ($companyPkid <= 0) {
+            $companyPkid = 1;
+        }
+
+        $login = $row['login'] ?? null;
+        if (is_array($login)) {
+            $login = $login[0] ?? null;
+        }
+
+        $date = null;
+        if (!empty($row['date'])) {
+            $timestamp = strtotime((string)$row['date']);
+            if ($timestamp !== false) {
+                $date = date('Y-m-d H:i:s', $timestamp);
+            }
+        }
+
+        $gmtimeAdd = toDateTime($row, 'gmtimeAdd', 'ugmtimeAdd');
+        $gmtimeChange = toDateTime($row, 'gmtimeChange', 'ugmtimeChange');
+        $ugmtimeAdd = (int)($row['ugmtimeAdd'] ?? strtotime($gmtimeAdd));
+        $ugmtimeChange = (int)($row['ugmtimeChange'] ?? strtotime($gmtimeChange));
+
+        $clientsBatch[] = [
+            'line' => $lineNo,
+            'data' => [
+                $clientPkid,
+                $companyPkid,
+                $basePkid,
+                isset($row['operator']) && is_numeric($row['operator'])
+                    ? (int)$row['operator'] : null,
+                null,
+                scalarValue($login),
+                scalarValue($row['company_name'] ?? null),
+                scalarValue($row['main_email'] ?? null),
+                scalarValue($row['main_phone'] ?? null),
+                $date,
+                !empty($row['isDeleted']) ? 1 : 0,
+                $gmtimeAdd,
+                $gmtimeChange,
+                max(0, $ugmtimeAdd),
+                max(0, $ugmtimeChange),
+            ],
+        ];
+
+        foreach ($row as $key => $value) {
+            if (isset($excludedKeys[$key])) {
+                continue;
+            }
+
+            $fieldPkid = $fieldAliases[(string)$basePkid][(string)$key] ?? null;
+            $fieldValue = scalarValue($value);
+
+            if ($fieldPkid === null || $fieldValue === null) {
+                $valuesSkipped++;
+                continue;
+            }
+
+            $meta = $fieldMetadata[(int)$fieldPkid] ?? null;
+            if ($meta !== null && $meta['fieldType'] === 5) {
+                $dictId = $meta['dictionary_pkid'];
+                if (isset($dictionaryMap[$dictId][$fieldValue])) {
+                    $fieldValue = $dictionaryMap[$dictId][$fieldValue];
+                    $convertedDictionaryValues++;
+                } elseif (preg_match('/^[0-9]{13,16}$/', $fieldValue)) {
+                    $unmatchedDictionaryValues++;
+                    $sampleKey = $dictId . ':' . $fieldValue;
+                    if (count($unmatchedDictionarySamples) < 100) {
+                        $unmatchedDictionarySamples[$sampleKey] = true;
+                    }
+                    // Keep original value for investigation, never guess a label.
+                }
+            }
+
+            $valuesBatch[] = [
+                'line' => $lineNo,
+                'data' => [
+                    $companyPkid,
+                    $clientPkid,
+                    $fieldPkid,
+                    $fieldValue,
+                    !empty($row['isDeleted']) ? 1 : 0,
+                    $gmtimeAdd,
+                    $gmtimeChange,
+                    max(0, $ugmtimeAdd),
+                    max(0, $ugmtimeChange),
+                ],
+            ];
+
+            if (count($valuesBatch) >= VALUE_BATCH_SIZE) {
+                flushBatch(
+                    $pdo, 'client_field_values', $valueColumns, $valuesBatch,
+                    $valuesImported, $valuesSkipped
+                );
+            }
+        }
+
+        if (count($clientsBatch) >= CLIENT_BATCH_SIZE) {
+            flushBatch(
+                $pdo, 'clients', $clientColumns, $clientsBatch,
+                $clientsImported, $clientsSkipped
+            );
+        }
+
+        if ($lineNo % COMMIT_EVERY === 0) {
+            flushBatch(
+                $pdo, 'clients', $clientColumns, $clientsBatch,
+                $clientsImported, $clientsSkipped
+            );
+            flushBatch(
+                $pdo, 'client_field_values', $valueColumns, $valuesBatch,
+                $valuesImported, $valuesSkipped
+            );
+
+            $pdo->commit();
+            $pdo->beginTransaction();
+
+            $elapsed = max(1, microtime(true) - $startedAt);
+            printf(
+                "[%s] Строк: %d; клиентов: %d; значений: %d; скорость: %.0f строк/сек\n",
+                gmdate('H:i:s', (int)$elapsed),
+                $lineNo,
+                $clientsImported,
+                $valuesImported,
+                $lineNo / $elapsed
+            );
+
+            $lastProgress = $lineNo;
+        }
+    }
+
+    flushBatch(
+        $pdo, 'clients', $clientColumns, $clientsBatch,
+        $clientsImported, $clientsSkipped
+    );
+    flushBatch(
+        $pdo, 'client_field_values', $valueColumns, $valuesBatch,
+        $valuesImported, $valuesSkipped
+    );
+
+    $pdo->commit();
+    fclose($handle);
+
+} catch (Throwable $e) {
+    if (is_resource($handle)) {
+        fclose($handle);
+    }
+
+    if ($pdo->inTransaction()) {
+        $pdo->rollBack();
+    }
+
+    logError("Критическая ошибка на строке {$lineNo}: " . $e->getMessage());
+    echo "Критическая ошибка на строке {$lineNo}: {$e->getMessage()}\n";
+    echo "Предыдущие завершённые транзакции сохранены.\n";
+    exit(1);
+} finally {
+    $pdo->exec('SET SESSION foreign_key_checks = 1');
+    $pdo->exec('SET SESSION unique_checks = 1');
+}
+
+$elapsed = (int)round(microtime(true) - $startedAt);
+
+printf("\nВремя импорта: %02d:%02d:%02d\n",
+    intdiv($elapsed, 3600),
+    intdiv($elapsed % 3600, 60),
+    $elapsed % 60
+);
+
+printf("Строк обработано: %d\n", $lineNo);
+printf("Клиентов добавлено: %d\n", $clientsImported);
+printf("Клиентов пропущено: %d\n", $clientsSkipped);
+printf("Значений полей добавлено: %d\n", $valuesImported);
+printf("Значений полей пропущено: %d\n", $valuesSkipped);
+printf("Некорректных строк: %d\n", $invalidRows);
+printf("Средняя скорость: %.0f строк/сек\n", $lineNo / max(1, $elapsed));
+printf("Файл ошибок: %s\n", $errorFile);
+printf("Целевая БД: %s\n", $targetDb);
+
+printf("Значений списков преобразовано сразу: %d\n", $convertedDictionaryValues);
+printf("Неизвестных старых ID списков: %d\n", $unmatchedDictionaryValues);
+if ($unmatchedDictionarySamples) {
+    logError('Неизвестные dictionary_pkid:pos (первые 100): ' . implode(', ', array_keys($unmatchedDictionarySamples)));
+}
+if ($unmatchedDictionaryValues > 0) {
+    fwrite(STDERR, "WARNING: unmatched dictionary IDs exist; do not cut over before review.\n");
+}
+КОНЕЦ СОДЕРЖИМОГО ФАЙЛА
+
+===== СОЗДАТЬ ФАЙЛ: /srv/projects/mf/crm/src/export/05_import_contacts.php =====
+Команда создания: Создать через редактор (nano/vim) в указанном пути, вставить весь PHP-код между маркерами
+НАЧАЛО СОДЕРЖИМОГО ФАЙЛА
+<?php
+declare(strict_types=1);
+// Fast, set-based import. TEST DB ONLY. Requires an empty contacts table.
+const DB_NAME = 'MIGRATION_TARGET_DB';
+const SOURCE = '/srv/projects/crm/export/client.jsonl';
+const ENV = '/srv/projects/mf/crm/src/.env';
+const STAGE = 'migration_contacts_stage_20261105';
+const BATCH = 1000;
+$apply = in_array('--apply', $argv, true);
+function envFile(string $path): array {
+    $out=[];
+    foreach (file($path, FILE_IGNORE_NEW_LINES|FILE_SKIP_EMPTY_LINES) as $line) {
+        $line=trim($line);
+        if ($line==='' || $line[0]==='#' || !str_contains($line,'=')) continue;
+        [$k,$v]=explode('=',$line,2);
+        $out[trim($k)]=trim(trim($v), "\"'");
+    }
+    return $out;
+}
+function val($v, int $max): ?string {
+    if (!is_scalar($v)) return null;
+    $v=trim((string)$v);
+    return $v==='' ? null : mb_substr($v,0,$max,'UTF-8');
+}
+function stamp($v): string {
+    if (!is_scalar($v) || $v==='') return '2020-01-01 00:00:00';
+    $ts=is_numeric($v) ? (int)$v : strtotime((string)$v);
+    return $ts && $ts>0 && $ts<4102444800 ? gmdate('Y-m-d H:i:s',$ts) : '2020-01-01 00:00:00';
+}
+if (!is_readable(SOURCE) || !is_readable(ENV)) exit("Source or .env not readable\n");
+$env=envFile(ENV);
+$pdo=new PDO('mysql:host='.($env['MYSQL_HOST']??'127.0.0.1').';port='.($env['MYSQL_PORT']??3306).';dbname='.DB_NAME.';charset=utf8mb4', $env['MYSQL_USER']??'', $env['MYSQL_PASSWORD']??'', [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_EMULATE_PREPARES=>false]);
+if ($pdo->query('SELECT DATABASE()')->fetchColumn()!==DB_NAME) exit("Wrong DB\n");
+$clients=(int)$pdo->query('SELECT COUNT(*) FROM clients')->fetchColumn();
+$contacts=(int)$pdo->query('SELECT COUNT(*) FROM contacts')->fetchColumn();
+echo "Database: ".DB_NAME."; clients=$clients; contacts=$contacts\n";
+if (!$apply) {echo "DRY RUN. To import: php ".__FILE__." --apply\n";exit;}
+if ($contacts!==0) exit("STOP: contacts table is not empty. No changes made.\n");
+$linked=(int)$pdo->query('SELECT COUNT(*) FROM clients WHERE contact_pkid IS NOT NULL')->fetchColumn();
+if ($linked!==0) exit("STOP: $linked clients already have contact_pkid. No changes made.\n");
+$pdo->exec('CREATE TABLE IF NOT EXISTS '.STAGE.' (
+ client_pkid BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+ company_pkid BIGINT UNSIGNED NOT NULL,
+ user_login VARCHAR(255) NULL,
+ email VARCHAR(100) NULL,
+ phone VARCHAR(30) NULL,
+ display_name VARCHAR(255) NULL,
+ gadd DATETIME NOT NULL,
+ gchange DATETIME NOT NULL,
+ uadd INT UNSIGNED NOT NULL,
+ uchange INT UNSIGNED NOT NULL,
+ KEY idx_login (company_pkid,user_login)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4');
+$existing=(int)$pdo->query('SELECT COUNT(*) FROM '.STAGE)->fetchColumn();
+if ($existing!==0) exit("STOP: staging table already contains $existing rows; inspect before rerunning.\n");
+$fh=fopen(SOURCE,'rb');$rows=[];$seen=0;$staged=0;$start=time();
+$flush=function() use (&$rows,&$staged,$pdo) {
+ if (!$rows) return;
+ foreach (array_chunk($rows,250) as $part) {
+  $placeholders=implode(',',array_fill(0,count($part),'(?,?,?,?,?,?,?,?,?,?)'));
+  $sql='INSERT IGNORE INTO '.STAGE.' (client_pkid,company_pkid,user_login,email,phone,display_name,gadd,gchange,uadd,uchange) VALUES '.$placeholders;
+  $args=[];foreach($part as $r)foreach($r as $v)$args[]=$v;
+  $pdo->prepare($sql)->execute($args);
+ }
+ $staged+=count($rows);$rows=[];
+};
+try {
+ while (($line=fgets($fh))!==false) {
+  ++$seen;$r=json_decode($line,true);
+  if (!is_array($r) || !isset($r['pkid']) || !ctype_digit((string)$r['pkid'])) continue;
+  $login=val($r['primary_login']??null,255);
+  if ($login===null) {$alt=$r['login']??null;$login=val(is_array($alt)?($alt[0]??null):$alt,255);}
+  $parts=[];foreach(['sname','fname','lname'] as $key){$v=val($r[$key]??null,255);if($v!==null)$parts[]=$v;}
+  $name=val(implode(' ',$parts),255)??val($r['company_name']??null,255)??$login??'Без имени';
+  $created=stamp($r['ugmtimeAdd']??($r['gmtimeAdd']??null));
+  $changed=stamp($r['ugmtimeChange']??($r['gmtimeChange']??null));
+  $uadd=(int)($r['ugmtimeAdd']??strtotime($created));$uchange=(int)($r['ugmtimeChange']??strtotime($changed));
+  // Company comes from the already imported client row, not the raw source.
+  $rows[]=[(string)$r['pkid'],0,$login,val($r['main_email']??null,100),val($r['main_phone']??null,30),$name,$created,$changed,max(0,min(4294967295,$uadd)),max(0,min(4294967295,$uchange))];
+  if (count($rows)>=BATCH) $flush();
+  if ($seen%100000===0) echo "Read $seen source rows (".(time()-$start)."s)\n";
+ }
+ $flush();fclose($fh);
+ echo "Staged source IDs: $staged. Removing IDs not in clients and syncing company...\n";
+ $pdo->exec('DELETE s FROM '.STAGE.' s LEFT JOIN clients c ON c.pkid=s.client_pkid WHERE c.pkid IS NULL');
+ $pdo->exec('UPDATE '.STAGE.' s JOIN clients c ON c.pkid=s.client_pkid SET s.company_pkid=c.company_pkid');
+ $total=(int)$pdo->query('SELECT COUNT(*) FROM '.STAGE)->fetchColumn();
+ echo "Valid staged clients: $total. Creating contacts in two set-based INSERTs...\n";
+ // Stable unique contact IDs: for a login group, smallest client ID; for no login, client ID.
+ $pdo->exec("INSERT INTO contacts (pkid,company_pkid,user_pkid,user_login,email,phone,displayName,is_deleted,gmtimeAdd,gmtimeChange,ugmtimeAdd,ugmtimeChange)
+ SELECT s.client_pkid,s.company_pkid,NULL,NULL,s.email,s.phone,s.display_name,0,s.gadd,s.gchange,s.uadd,s.uchange
+ FROM ".STAGE." s WHERE s.user_login IS NULL");
+ $pdo->exec("INSERT INTO contacts (pkid,company_pkid,user_pkid,user_login,email,phone,displayName,is_deleted,gmtimeAdd,gmtimeChange,ugmtimeAdd,ugmtimeChange)
+ SELECT s.client_pkid,s.company_pkid,NULL,s.user_login,s.email,s.phone,s.display_name,0,s.gadd,s.gchange,s.uadd,s.uchange
+ FROM ".STAGE." s INNER JOIN
+ (SELECT company_pkid,user_login,MIN(client_pkid) AS first_id FROM ".STAGE." WHERE user_login IS NOT NULL GROUP BY company_pkid,user_login) g
+ ON g.first_id=s.client_pkid");
+ echo "Contacts created: ".$pdo->query('SELECT COUNT(*) FROM contacts')->fetchColumn().". Linking clients...\n";
+ // For matching groups, contact PKID is the smallest client PKID.
+ $pdo->exec('UPDATE clients c JOIN '.STAGE.' s ON s.client_pkid=c.pkid SET c.contact_pkid=s.client_pkid,c.user_login=s.user_login,c.user_pkid=NULL WHERE s.user_login IS NULL');
+ $pdo->exec('UPDATE clients c JOIN '.STAGE.' s ON s.client_pkid=c.pkid JOIN
+ (SELECT company_pkid,user_login,MIN(client_pkid) AS contact_id FROM '.STAGE.' WHERE user_login IS NOT NULL GROUP BY company_pkid,user_login) g
+ ON g.company_pkid=s.company_pkid AND g.user_login=s.user_login
+ SET c.contact_pkid=g.contact_id,c.user_login=s.user_login,c.user_pkid=NULL WHERE s.user_login IS NOT NULL');
+ echo "Done in ".(time()-$start)."s; contacts=".$pdo->query('SELECT COUNT(*) FROM contacts')->fetchColumn()."; linked clients=".$pdo->query('SELECT COUNT(*) FROM clients WHERE contact_pkid IS NOT NULL')->fetchColumn()."\n";
+} catch(Throwable $e) {if(is_resource($fh))fclose($fh);fwrite(STDERR,"ERROR: ".$e->getMessage()."\nStaging retained for investigation; do NOT rerun or clear tables blindly.\n");exit(1);}
+КОНЕЦ СОДЕРЖИМОГО ФАЙЛА
+
+ЭТАП 3. ПОШАГОВЫЙ ЗАПУСК — НЕ ЗАПУСКАТЬ ВСЁ ОДНИМ БЛОКОМ
+cd /srv/projects/mf/crm/src
+
+3.1. Справочники:
+  php export/01_import_dictionaries.php
+Проверить SQL: SELECT COUNT(*) FROM dictionaries; SELECT COUNT(*) FROM dictionary_values;
+Важно: повторный запуск может дублировать dictionary_values. Не повторять.
+
+3.2. Базы и поля:
+  php export/02_import_bases.php
+Проверить SQL: SELECT COUNT(*) FROM client_bases; SELECT COUNT(*) FROM client_base_fields;
+Внимание: fieldType=5 — список, dictionary_pkid нужен для маппинга. Не менять имена полей между этапами.
+
+3.3. Разрешения:
+  php export/03_import_permissions.php
+Проверить SQL: SELECT COUNT(*) FROM client_base_permissions;
+
+3.4. Клиенты и значения полей (ИСПРАВЛЕННЫЙ 04):
+  php export/04_import_clients.php
+  tail -n 80 export/04_import_clients_errors.log
+Проверить: SELECT COUNT(*) FROM clients; SELECT COUNT(*) FROM client_field_values;
+В отчёте будут «Значений списков преобразовано сразу» и «Неизвестных старых ID списков». Если неизвестных >0, НЕ переключать прод до проверки их происхождения. Старые 7101 несовпадений теста автоматически не исправлены.
+В 04 есть INSERT IGNORE и частичные COMMIT каждые 5000 строк; если прервётся, восстановить чистую целевую БД, а не повторять поверх частичного импорта.
+
+3.5. Контакты:
+  php export/05_import_contacts.php
+  php export/05_import_contacts.php --apply
+Проверить SQL: SELECT COUNT(*) FROM contacts;
+Этот скрипт создаёт служебную таблицу migration_contacts_stage_20261105 и удаляет её после успешного выполнения. Если скрипт прерван, НЕ повторять без проверки этой таблицы. Нужна пустая contacts и отсутствие clients.contact_pkid. Контакты группируются по (company_pkid,user_login); это должно соответствовать бизнес-логике CRM.
+
+ИТОГО: отдельный check_dictionary_mapping.php --apply больше НЕ нужен. Его логика перенесена в 04. После завершения используйте SQL и интерфейс для проверки; не делайте массовых UPDATE без необходимости.
+
+ЭТАП 4. КОНТРОЛЬ ЦЕЛОСТНОСТИ (SQL в выбранной БД)
+-- Клиенты без базы:
+SELECT COUNT(*) AS orphan_clients FROM clients c LEFT JOIN client_bases b ON b.pkid=c.base_pkid WHERE b.pkid IS NULL;
+-- Значения без клиента:
+SELECT COUNT(*) AS orphan_client_values FROM client_field_values v LEFT JOIN clients c ON c.pkid=v.client_pkid WHERE c.pkid IS NULL;
+-- Значения без поля:
+SELECT COUNT(*) AS orphan_field_values FROM client_field_values v LEFT JOIN client_base_fields f ON f.pkid=v.field_pkid WHERE f.pkid IS NULL;
+-- Значения поля другой базы:
+SELECT COUNT(*) AS invalid_field_links FROM client_field_values v JOIN clients c ON c.pkid=v.client_pkid JOIN client_base_fields f ON f.pkid=v.field_pkid WHERE f.base_pkid<>c.base_pkid;
+-- Разрешения для отсутствующих баз:
+SELECT COUNT(*) AS invalid_permissions FROM client_base_permissions p LEFT JOIN client_bases b ON b.pkid=p.base_pkid WHERE b.pkid IS NULL;
+-- Невалидные ссылки на контакт:
+SELECT COUNT(*) AS invalid_contact_links FROM clients c LEFT JOIN contacts ct ON ct.pkid=c.contact_pkid WHERE c.contact_pkid IS NOT NULL AND ct.pkid IS NULL;
+-- Справочник Пол:
+SELECT f.dictionary_pkid,v.value,COUNT(*) AS total FROM client_field_values v JOIN client_base_fields f ON f.pkid=v.field_pkid WHERE f.fieldType=5 AND v.isDeleted=0 AND f.dictionary_pkid=1373481410231889 GROUP BY f.dictionary_pkid,v.value ORDER BY total DESC;
+-- Подозрительные оставшиеся legacy ID:
+SELECT f.dictionary_pkid,v.value,COUNT(*) AS total FROM client_field_values v JOIN client_base_fields f ON f.pkid=v.field_pkid WHERE f.fieldType=5 AND v.isDeleted=0 AND v.value REGEXP '^[0-9]{13,16}$' GROUP BY f.dictionary_pkid,v.value ORDER BY total DESC;
+
+В тесте «Пол»: мужской 15779, женский 15196, не указан 221. На проде могут быть другие цифры.
+Проверить также соответствие количества исходных документов, журнал пропусков 04 и наличие 1496 orphan_clients (известная проблема теста). Если ненулевые аномалии, расследовать, не игнорировать.
+
+ЭТАП 5. ПРИЁМКА И ПЕРЕКЛЮЧЕНИЕ
+1. Проверить в UI список клиентов, карточки, поиск, пользовательские поля, выпадающие списки, контакты, создание/изменение клиента, доступ администратора и обычного пользователя.
+2. Подтвердить отсутствие критичных пропусков и неверных ссылок. Особенно проверить 2073 пропуска и 1496 orphan_clients теста; новый скрипт сам их не чинит.
+3. Сохранить отчёты импорта и JSONL до завершения приёмки.
+4. Переключать приложение только после согласования и с заранее проверенным планом отката; команды переключения зависят от реальной инфраструктуры и в исходном архиве не указаны.
+5. При неуспехе — вернуться к старой CRM и восстановить целевую базу из проверенной копии; не пытаться «долить» данные повторным запуском этих скриптов.
+
+ОГРАНИЧЕНИЯ/ЧТО НЕЛЬЗЯ ОБЕЩАТЬ:
+- Скрипты взяты из пользовательского архива; новый 04 прошёл статическую проверку синтаксиса, но НЕ проходил повторный полный импорт на проде.
+- Известные проблемы целостности тестового импорта требуют отдельного решения.
+- Некоторые исходные значения списков отсутствуют в list.jsonl; новый 04 сохраняет их как есть и выдаёт предупреждение.
+- Нет скриптов импорта clientHistory и relation_type; они остаются экспортными файлами.
+- Экспорт MongoDB не гарантирует согласованный snapshot без остановки записи.
+- Это подробный runbook, но финальная продакшен-готовность требует повторной проверки на чистой тестовой БД с новым 04.
+
