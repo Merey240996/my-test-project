@@ -19,16 +19,18 @@
 							</svg>
 							WA Active
 						</Badge>
-						<Badge
-							variant="soft"
-							color="primary"
-							class="flex items-center gap-1.5 rounded-full border border-this-darker/20 dark:border-this-lighter/20"
-						>
-							<svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-								<path fill-rule="evenodd" clip-rule="evenodd" d="M23.1117 4.49449C23.4296 2.94472 21.9074 1.65683 20.4317 2.227L2.3425 9.21601C0.694517 9.85273 0.621087 12.1572 2.22518 12.8975L6.1645 14.7157L8.03849 21.2746C8.13583 21.6153 8.40618 21.8791 8.74917 21.968C9.09216 22.0568 9.45658 21.9576 9.70712 21.707L12.5938 18.8203L16.6375 21.8531C17.8113 22.7334 19.5019 22.0922 19.7967 20.6549L23.1117 4.49449ZM3.0633 11.0816L21.1525 4.0926L17.8375 20.2531L13.1 16.6999C12.7019 16.4013 12.1448 16.4409 11.7929 16.7928L10.5565 18.0292L10.928 15.9861L18.2071 8.70703C18.5614 8.35278 18.5988 7.79106 18.2947 7.39293C17.9906 6.99479 17.4389 6.88312 17.0039 7.13168L6.95124 12.876L3.0633 11.0816ZM8.17695 14.4791L8.78333 16.6015L9.01614 15.321C9.05253 15.1209 9.14908 14.9366 9.29291 14.7928L11.5128 12.573L8.17695 14.4791Z" fill="currentColor"/>
-							</svg>
-							TG Active
-						</Badge>
+						<div class="cursor-pointer" @click="showTgPanel = !showTgPanel">
+							<Badge
+								variant="soft"
+								color="primary"
+								class="flex items-center gap-1.5 rounded-full border border-this-darker/20 dark:border-this-lighter/20"
+							>
+								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+									<path fill-rule="evenodd" clip-rule="evenodd" d="M23.1117 4.49449C23.4296 2.94472 21.9074 1.65683 20.4317 2.227L2.3425 9.21601C0.694517 9.85273 0.621087 12.1572 2.22518 12.8975L6.1645 14.7157L8.03849 21.2746C8.13583 21.6153 8.40618 21.8791 8.74917 21.968C9.09216 22.0568 9.45658 21.9576 9.70712 21.707L12.5938 18.8203L16.6375 21.8531C17.8113 22.7334 19.5019 22.0922 19.7967 20.6549L23.1117 4.49449ZM3.0633 11.0816L21.1525 4.0926L17.8375 20.2531L13.1 16.6999C12.7019 16.4013 12.1448 16.4409 11.7929 16.7928L10.5565 18.0292L10.928 15.9861L18.2071 8.70703C18.5614 8.35278 18.5988 7.79106 18.2947 7.39293C17.9906 6.99479 17.4389 6.88312 17.0039 7.13168L6.95124 12.876L3.0633 11.0816ZM8.17695 14.4791L8.78333 16.6015L9.01614 15.321C9.05253 15.1209 9.14908 14.9366 9.29291 14.7928L11.5128 12.573L8.17695 14.4791Z" fill="currentColor"/>
+								</svg>
+								{{ tgChannel ? 'TG подключён' : 'TG не подключён' }}
+							</Badge>
+						</div>
 						<Badge
 							variant="outlined"
 							class="flex items-center gap-1.5 rounded-full"
@@ -37,6 +39,22 @@
 						</Badge>
 					</div>
 				</header>
+
+				<div v-if="showTgPanel" class="glass-panel rounded-xl border border-slate-200 p-4 flex flex-wrap items-end gap-3 bg-white">
+					<template v-if="tgChannel">
+						<div class="text-sm text-slate-700">
+							<span class="font-bold">Telegram-бот подключён:</span> {{ tgChannel.name }}
+						</div>
+						<Button :disabled="tgBusy" @click="disconnectTelegram">Отключить</Button>
+					</template>
+					<template v-else>
+						<div class="flex-1 min-w-[260px]">
+							<label class="block text-xs font-bold text-slate-500 mb-1">Токен бота (из @BotFather)</label>
+							<Input v-model="tgToken" type="password" placeholder="123456789:AA..." class="w-full" />
+						</div>
+						<Button color="primary" :disabled="tgBusy || !tgToken.trim()" @click="connectTelegram">Подключить</Button>
+					</template>
+				</div>
 
 				<!-- Hub Layout -->
 				<div class="flex gap-4 overflow-hidden min-h-0" style="height: calc(100vh - 8rem);">
@@ -97,7 +115,7 @@
 							<div v-if="activeChat?.id === chat.id" class="absolute left-0 top-0 bottom-0 w-1 bg-blue-500"></div>
 
 							<div class="relative shrink-0">
-								<img :src="chat.avatar" class="w-11 h-11 rounded-full object-cover border border-slate-200">
+								<div class="w-11 h-11 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm border border-slate-200">{{ initials(chat.name) }}</div>
 								<div
 									class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-white flex items-center justify-center text-[8px] text-white shadow-sm"
 									:class="chat.platform === 'WA' ? 'bg-emerald-500' : 'bg-blue-500'"
@@ -133,7 +151,7 @@
 						<!-- Chat Header -->
 						<div class="px-6 py-4 border-b border-slate-200 bg-white/80 flex justify-between items-center shrink-0">
 							<div class="flex items-center gap-4">
-								<img :src="activeChat.avatar" class="w-10 h-10 rounded-full object-cover border border-slate-200">
+								<div class="w-10 h-10 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-sm border border-slate-200">{{ initials(activeChat.name) }}</div>
 								<div>
 									<h3 class="font-bold text-slate-800 flex items-center gap-2">
 										{{ activeChat.name }}
@@ -145,8 +163,7 @@
 										</Badge>
 									</h3>
 									<p class="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-										<span>{{ activeChat.phone }}</span> •
-										<a href="#" class="text-blue-600 hover:underline">CRM: Сделка #B2B-1055</a>
+										<span>Telegram</span>
 									</p>
 								</div>
 							</div>
@@ -168,15 +185,7 @@
 
 						<!-- Chat Messages Area -->
 						<div class="flex-1 overflow-y-auto custom-scrollbar p-6 bg-slate-50/50 flex flex-col gap-4" ref="chatContainer">
-							<!-- Date Divider -->
-							<div class="flex justify-center my-2">
-								<Badge 
-									class="bg-slate-200 text-slate-500 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider"
-								>
-									Сегодня
-								</Badge>
-							</div>
-
+							
 							<!-- Messages -->
 							<div v-for="msg in messages" :key="msg.id" class="flex" :class="msg.isMine ? 'justify-end' : 'justify-start'">
 
@@ -186,7 +195,7 @@
 										<div v-if="msg.sentiment" class="flex items-center gap-1.5 mb-1 text-[9px] font-bold uppercase tracking-wider" :class="msg.sentiment === 'positive' ? 'text-blue-500' : 'text-amber-500'">
 											<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bot-icon lucide-bot"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg> AI Сентимент: {{ msg.sentiment }}
 										</div>
-										<div v-html="msg.text"></div>
+										<div class="whitespace-pre-wrap break-words">{{ msg.text }}</div>
 									</div>
 									<div class="text-[10px] text-slate-400 mt-1 ml-1 font-medium">{{ msg.time }}</div>
 								</div>
@@ -232,7 +241,7 @@
 								</Button>
 								<textarea
 									v-model="newMessage"
-									@keyup.enter.prevent="sendMessage"
+									@keydown.enter.exact.prevent="sendMessage"
 									placeholder="Введите сообщение..."
 									class="w-full bg-transparent resize-none outline-none text-sm text-slate-800 max-h-32 py-2"
 									rows="1"
@@ -243,7 +252,7 @@
 								</Button>
 								<Button
 									@click="sendMessage"
-									:disabled="!newMessage.trim()"
+									:disabled="!newMessage.trim() || sending"
 									class="p-2 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors shrink-0"
 								>
 									<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-send-horizontal-icon lucide-send-horizontal"><path d="M3.714 3.048a.498.498 0 0 0-.683.627l2.843 7.627a2 2 0 0 1 0 1.396l-2.842 7.627a.498.498 0 0 0 .682.627l18-8.5a.5.5 0 0 0 0-.904z"/><path d="M6 12h16"/></svg>
@@ -465,9 +474,11 @@ import Badge from 'io7/components/tailux/ui/Badge.vue';
 import Input from 'io7/components/tailux/ui/form/Input.vue';
 import Button from 'io7/components/tailux/ui/Button.vue';
 import Range from 'io7/components/tailux/ui/form/Range.vue';
+import lib from 'io7/lib';
 
 export default {
 	name: 'CommunicationHub',
+	mixins: lib.mixins,
 
 	components: {
 		TabGroup,
@@ -484,33 +495,35 @@ export default {
 	data() {
 		return {
 			searchQuery: '',
-			activeChatId: 1,
+			activeChatId: null,
 			newMessage: '',
 			phoneState: 'idle',
 			dialNumber: '',
 
-			dialogs: [
-				{ id: 1, name: 'TOO KazAgroTrade', phone: '+7 (701) 555-11-22', avatar: 'https://ui-avatars.com/api/?name=K+A&background=10b981&color=fff', platform: 'WA', lastMessage: 'Спасибо, мы изучим ваше КП.', time: '14:22', unread: 0, isReply: true, tag: 'VIP' },
-				{ id: 2, name: 'Алина Касымова', phone: '+7 (705) 112-33-44', avatar: 'https://ui-avatars.com/api/?name=Алина&background=0ea5e9&color=fff', platform: 'TG', lastMessage: 'А когда будет готова форма?', time: '11:05', unread: 2, isReply: false, tag: 'B2C' },
-				{ id: 3, name: 'ИП Омаров', phone: '+7 (707) 111-22-33', avatar: 'https://ui-avatars.com/api/?name=ИП&background=f59e0b&color=fff', platform: 'WA', lastMessage: 'Счет на оплату получил.', time: 'Вчера', unread: 0, isReply: true, tag: 'B2B' },
-			],
+			dialogs: [],
 
-			messages: [
-				{ id: 1, text: 'Добрый день! Подскажите статус нашего форвардного контракта.', time: '13:45', isMine: false, sentiment: 'neutral' },
-				{ id: 2, text: 'Здравствуйте! Ваш контракт согласован. Отправляю актуальное коммерческое предложение с учетом скидки за объем.', time: '13:48', isMine: true },
-				{ id: 3, text: 'Коммерческое предложение_KazAgro.pdf', time: '13:48', isMine: true, attachment: { name: 'КП_KazAgro_Май.pdf', size: '2.4 MB' } },
-				{ id: 4, text: 'Отлично, спасибо. Изучим и дадим ответ до конца дня.', time: '14:22', isMine: false, sentiment: 'positive' },
-			],
+			messages: [],
+
+			sending: false,
+			pollTimer: null,
 
 			callHistory: [
 				{ id: 8912, name: 'TOO KazAgroTrade', phone: '+7 (701) 555-11-22', type: 'out', time: 'Сегодня, 10:15', duration: '04:12', playing: false, progress: 0, speed: 1.0 },
 				{ id: 8905, name: 'Алина Касымова', phone: '+7 (705) 112-33-44', type: 'in', time: 'Вчера, 16:40', duration: '01:35', playing: false, progress: 0, speed: 1.0 },
 				{ id: 8890, name: 'Неизвестный (Астана)', phone: '+7 (7172) 44-55-66', type: 'in', time: 'Вчера, 11:20', duration: '00:45', playing: false, progress: 0, speed: 1.5 },
 			],
+			showTgPanel: false,
+			tgChannel: null,
+			tgToken: '',
+			tgBusy: false,
 		};
 	},
 
 	computed: {
+		companyPkid() {
+			return this.$store.state.io7.auth.selectedCabPkid;
+		},
+
 		filteredDialogs() {
 			return this.dialogs.filter(d =>
 				d.name.toLowerCase().includes(this.searchQuery.toLowerCase()) ||
@@ -534,42 +547,6 @@ export default {
 				const container = this.$refs.chatContainer;
 				if (container) container.scrollTop = container.scrollHeight;
 			});
-		},
-
-		sendMessage() {
-			if (!this.newMessage.trim()) return;
-
-			this.messages.push({
-				id: Date.now(),
-				text: this.newMessage.replace(/\n/g, '<br>'),
-				time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-				isMine: true,
-			});
-
-			const chat = this.dialogs.find(d => d.id === this.activeChatId);
-			if (chat) {
-				chat.lastMessage = this.newMessage;
-				chat.time = 'Только что';
-				chat.isReply = true;
-			}
-
-			this.newMessage = '';
-
-			const ta = this.$refs.chatInput;
-			if (ta) ta.style.height = 'auto';
-
-			this.scrollToBottom();
-		},
-
-		sendKP() {
-			this.messages.push({
-				id: Date.now(),
-				text: 'Направляю коммерческое предложение. Пожалуйста, ознакомьтесь.',
-				time: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }),
-				isMine: true,
-				attachment: { name: 'КП_Сгенерировано_CRM.pdf', size: '1.2 MB' },
-			});
-			this.scrollToBottom();
 		},
 
 		copyPhone() {
@@ -616,6 +593,158 @@ export default {
 			if (raw.length >= 10) return;
 			this.dialNumber = raw + num;
 		},
+
+		created() {
+			this.loadChannels();
+			this.loadDialogs();
+			// Простое обновление раз в 5 секунд (пока вкладка открыта)
+			this.pollTimer = setInterval(() => {
+				if (document.hidden) return;
+				this.loadDialogs();
+				if (this.activeChatId) this.loadMessages();
+			}, 5000);
+		},
+		beforeUnmount() {
+			clearInterval(this.pollTimer);
+		},
+
+		async loadChannels() {
+			try {
+				const d = await this.mfModel.getChatChannels({ company_pkid: this.companyPkid });
+				if (d.error_code === 1) {
+					this.tgChannel = (d.items || []).find(c => Number(c.type) === 1 && Number(c.status) === 1) || null;
+				}
+			} catch (e) {
+				console.error(e);
+			}
+		},
+		async connectTelegram() {
+			if (this.tgBusy || !this.tgToken.trim()) return;
+			this.tgBusy = true;
+			try {
+				const d = await this.mfModel.connectChatChannel({
+					company_pkid: this.companyPkid,
+					token: this.tgToken.trim(),
+				});
+				if (d.error_code === 1) {
+					this.$noty.success('Telegram-бот подключён', { layout: 'bottomRight', timeout: 3000 });
+					this.tgToken = '';
+					await this.loadChannels();
+				} else {
+					this.$noty.error(d.error_str || 'Не удалось подключить бота', { layout: 'bottomRight', timeout: 4000 });
+				}
+			} catch (e) {
+				console.error(e);
+				this.$noty.error('Ошибка сети', { layout: 'bottomRight', timeout: 3000 });
+			} finally {
+				this.tgBusy = false;
+			}
+		},
+		async disconnectTelegram() {
+			if (this.tgBusy || !this.tgChannel) return;
+			this.tgBusy = true;
+			try {
+				const d = await this.mfModel.disconnectChatChannel({
+					company_pkid: this.companyPkid,
+					pkid: this.tgChannel.pkid,
+				});
+				if (d.error_code === 1) {
+					this.$noty.success('Бот отключён', { layout: 'bottomRight', timeout: 3000 });
+					await this.loadChannels();
+				} else {
+					this.$noty.error(d.error_str || 'Не удалось отключить', { layout: 'bottomRight', timeout: 3000 });
+				}
+			} catch (e) {
+				console.error(e);
+			} finally {
+				this.tgBusy = false;
+			}
+		},
+
+	},
+	async selectChat(chat) {
+		this.activeChatId = chat.id;
+		chat.unread = 0;
+		this.messages = [];
+		await this.loadMessages(true);
+	},
+	async loadDialogs() {
+		try {
+			const d = await this.mfModel.getChatConversations({ company_pkid: this.companyPkid });
+			if (d.error_code !== 1) return;
+			this.dialogs = (d.items || []).map(c => ({
+				id: Number(c.pkid),
+				name: c.title || 'Без имени',
+				phone: '',
+				platform: Number(c.type) === 2 ? 'WA' : 'TG',
+				lastMessage: c.last_message_text || '',
+				time: this.formatTime(c.last_message_at),
+				unread: this.activeChatId === Number(c.pkid) ? 0 : Number(c.unread_count) || 0,
+				isReply: false,
+				tag: '',
+			}));
+		} catch (e) {
+			console.error(e);
+		}
+	},
+	async loadMessages(forceScroll = false) {
+		const id = this.activeChatId;
+		if (!id) return;
+		try {
+			const d = await this.mfModel.getChatMessages({ company_pkid: this.companyPkid, conversation_pkid: id });
+			if (d.error_code !== 1 || id !== this.activeChatId) return;
+			const prev = this.messages.length;
+			this.messages = (d.items || []).map(m => ({
+				id: Number(m.pkid),
+				text: m.text || '',
+				time: this.formatTime(m.gmtimeAdd, true),
+				isMine: Number(m.direction) === 2,
+			}));
+			if (forceScroll || this.messages.length > prev) this.scrollToBottom();
+		} catch (e) {
+			console.error(e);
+		}
+	},
+	async sendMessage() {
+		const text = this.newMessage.trim();
+		if (!text || !this.activeChatId || this.sending) return;
+		this.sending = true;
+		try {
+			const d = await this.mfModel.sendChatMessage({
+				company_pkid: this.companyPkid,
+				conversation_pkid: this.activeChatId,
+				text,
+			});
+			if (d.error_code === 1) {
+				this.newMessage = '';
+				const ta = this.$refs.chatInput;
+				if (ta) ta.style.height = 'auto';
+				await this.loadMessages(true);
+				await this.loadDialogs();
+			} else {
+				this.$noty.error(d.error_str || 'Не удалось отправить сообщение', { layout: 'bottomRight', timeout: 4000 });
+			}
+		} catch (e) {
+			console.error(e);
+			this.$noty.error('Ошибка сети', { layout: 'bottomRight', timeout: 3000 });
+		} finally {
+			this.sending = false;
+		}
+	},
+	sendKP() {
+		this.$noty.info('Отправка КП появится позже', { layout: 'bottomRight', timeout: 3000 });
+	},
+	initials(name) {
+		return String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => (w[0] || '').toUpperCase()).join('') || '?';
+	},
+	formatTime(value, timeOnly = false) {
+		if (!value) return '';
+		const d = new Date(String(value).replace(' ', 'T') + 'Z');
+		if (isNaN(d.getTime())) return '';
+		if (timeOnly || d.toDateString() === new Date().toDateString()) {
+			return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+		}
+		return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 	},
 };
 </script>
