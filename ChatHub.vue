@@ -619,6 +619,7 @@ export default {
 				console.error(e);
 			}
 		},
+		
 		async connectTelegram() {
 			if (this.tgBusy || !this.tgToken.trim()) return;
 			this.tgBusy = true;
@@ -641,6 +642,7 @@ export default {
 				this.tgBusy = false;
 			}
 		},
+		
 		async disconnectTelegram() {
 			if (this.tgBusy || !this.tgChannel) return;
 			this.tgBusy = true;
@@ -661,12 +663,14 @@ export default {
 				this.tgBusy = false;
 			}
 		},
+		
 		async selectChat(chat) {
 			this.activeChatId = chat.id;
 			chat.unread = 0;
 			this.messages = [];
 			await this.loadMessages(true);
 		},
+		
 		async loadDialogs() {
 			try {
 				const d = await this.mfModel.getChatConversations({ company_pkid: this.companyPkid });
@@ -686,6 +690,7 @@ export default {
 				console.error(e);
 			}
 		},
+		
 		async loadMessages(forceScroll = false) {
 			const id = this.activeChatId;
 			if (!id) return;
@@ -704,6 +709,7 @@ export default {
 				console.error(e);
 			}
 		},
+		
 		async sendMessage() {
 			const text = this.newMessage.trim();
 			if (!text || !this.activeChatId || this.sending) return;
@@ -730,22 +736,24 @@ export default {
 				this.sending = false;
 			}
 		},
-	},
 	
-	sendKP() {
-		this.$noty.info('Отправка КП появится позже', { layout: 'bottomRight', timeout: 3000 });
-	},
-	initials(name) {
-		return String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => (w[0] || '').toUpperCase()).join('') || '?';
-	},
-	formatTime(value, timeOnly = false) {
-		if (!value) return '';
-		const d = new Date(String(value).replace(' ', 'T') + 'Z');
-		if (isNaN(d.getTime())) return '';
-		if (timeOnly || d.toDateString() === new Date().toDateString()) {
-			return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-		}
-		return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+		sendKP() {
+			this.$noty.info('Отправка КП появится позже', { layout: 'bottomRight', timeout: 3000 });
+		},
+
+		initials(name) {
+			return String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => (w[0] || '').toUpperCase()).join('') || '?';
+		},
+		
+		formatTime(value, timeOnly = false) {
+			if (!value) return '';
+			const d = new Date(String(value).replace(' ', 'T') + 'Z');
+			if (isNaN(d.getTime())) return '';
+			if (timeOnly || d.toDateString() === new Date().toDateString()) {
+				return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+			}
+			return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+		},
 	},
 };
 </script>
