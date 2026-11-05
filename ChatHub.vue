@@ -535,6 +535,21 @@ export default {
 			return this.dialogs.find(d => d.id === this.activeChatId) || null;
 		},
 	},
+
+	created() {
+			this.loadChannels();
+			this.loadDialogs();
+			// Простое обновление раз в 5 секунд (пока вкладка открыта)
+			this.pollTimer = setInterval(() => {
+				if (document.hidden) return;
+				this.loadDialogs();
+				if (this.activeChatId) this.loadMessages();
+			}, 5000);
+		},
+
+	beforeUnmount() {
+		clearInterval(this.pollTimer);
+	},
 	methods: {
 		selectChat(chat) {
 			this.activeChatId = chat.id;
@@ -594,20 +609,6 @@ export default {
 			this.dialNumber = raw + num;
 		},
 
-		created() {
-			this.loadChannels();
-			this.loadDialogs();
-			// Простое обновление раз в 5 секунд (пока вкладка открыта)
-			this.pollTimer = setInterval(() => {
-				if (document.hidden) return;
-				this.loadDialogs();
-				if (this.activeChatId) this.loadMessages();
-			}, 5000);
-		},
-		beforeUnmount() {
-			clearInterval(this.pollTimer);
-		},
-
 		async loadChannels() {
 			try {
 				const d = await this.mfModel.getChatChannels({ company_pkid: this.companyPkid });
@@ -660,77 +661,77 @@ export default {
 				this.tgBusy = false;
 			}
 		},
-
-	},
-	async selectChat(chat) {
-		this.activeChatId = chat.id;
-		chat.unread = 0;
-		this.messages = [];
-		await this.loadMessages(true);
-	},
-	async loadDialogs() {
-		try {
-			const d = await this.mfModel.getChatConversations({ company_pkid: this.companyPkid });
-			if (d.error_code !== 1) return;
-			this.dialogs = (d.items || []).map(c => ({
-				id: Number(c.pkid),
-				name: c.title || 'Без имени',
-				phone: '',
-				platform: Number(c.type) === 2 ? 'WA' : 'TG',
-				lastMessage: c.last_message_text || '',
-				time: this.formatTime(c.last_message_at),
-				unread: this.activeChatId === Number(c.pkid) ? 0 : Number(c.unread_count) || 0,
-				isReply: false,
-				tag: '',
-			}));
-		} catch (e) {
-			console.error(e);
-		}
-	},
-	async loadMessages(forceScroll = false) {
-		const id = this.activeChatId;
-		if (!id) return;
-		try {
-			const d = await this.mfModel.getChatMessages({ company_pkid: this.companyPkid, conversation_pkid: id });
-			if (d.error_code !== 1 || id !== this.activeChatId) return;
-			const prev = this.messages.length;
-			this.messages = (d.items || []).map(m => ({
-				id: Number(m.pkid),
-				text: m.text || '',
-				time: this.formatTime(m.gmtimeAdd, true),
-				isMine: Number(m.direction) === 2,
-			}));
-			if (forceScroll || this.messages.length > prev) this.scrollToBottom();
-		} catch (e) {
-			console.error(e);
-		}
-	},
-	async sendMessage() {
-		const text = this.newMessage.trim();
-		if (!text || !this.activeChatId || this.sending) return;
-		this.sending = true;
-		try {
-			const d = await this.mfModel.sendChatMessage({
-				company_pkid: this.companyPkid,
-				conversation_pkid: this.activeChatId,
-				text,
-			});
-			if (d.error_code === 1) {
-				this.newMessage = '';
-				const ta = this.$refs.chatInput;
-				if (ta) ta.style.height = 'auto';
-				await this.loadMessages(true);
-				await this.loadDialogs();
-			} else {
-				this.$noty.error(d.error_str || 'Не удалось отправить сообщение', { layout: 'bottomRight', timeout: 4000 });
+		async selectChat(chat) {
+			this.activeChatId = chat.id;
+			chat.unread = 0;
+			this.messages = [];
+			await this.loadMessages(true);
+		},
+		async loadDialogs() {
+			try {
+				const d = await this.mfModel.getChatConversations({ company_pkid: this.companyPkid });
+				if (d.error_code !== 1) return;
+				this.dialogs = (d.items || []).map(c => ({
+					id: Number(c.pkid),
+					name: c.title || 'Без имени',
+					phone: '',
+					platform: Number(c.type) === 2 ? 'WA' : 'TG',
+					lastMessage: c.last_message_text || '',
+					time: this.formatTime(c.last_message_at),
+					unread: this.activeChatId === Number(c.pkid) ? 0 : Number(c.unread_count) || 0,
+					isReply: false,
+					tag: '',
+				}));
+			} catch (e) {
+				console.error(e);
 			}
-		} catch (e) {
-			console.error(e);
-			this.$noty.error('Ошибка сети', { layout: 'bottomRight', timeout: 3000 });
-		} finally {
-			this.sending = false;
-		}
+		},
+		async loadMessages(forceScroll = false) {
+			const id = this.activeChatId;
+			if (!id) return;
+			try {
+				const d = await this.mfModel.getChatMessages({ company_pkid: this.companyPkid, conversation_pkid: id });
+				if (d.error_code !== 1 || id !== this.activeChatId) return;
+				const prev = this.messages.length;
+				this.messages = (d.items || []).map(m => ({
+					id: Number(m.pkid),
+					text: m.text || '',
+					time: this.formatTime(m.gmtimeAdd, true),
+					isMine: Number(m.direction) === 2,
+				}));
+				if (forceScroll || this.messages.length > prev) this.scrollToBottom();
+			} catch (e) {
+				console.error(e);
+			}
+		},
+		async sendMessage() {
+			const text = this.newMessage.trim();
+			if (!text || !this.activeChatId || this.sending) return;
+			this.sending = true;
+			try {
+				const d = await this.mfModel.sendChatMessage({
+					company_pkid: this.companyPkid,
+					conversation_pkid: this.activeChatId,
+					text,
+				});
+				if (d.error_code === 1) {
+					this.newMessage = '';
+					const ta = this.$refs.chatInput;
+					if (ta) ta.style.height = 'auto';
+					await this.loadMessages(true);
+					await this.loadDialogs();
+				} else {
+					this.$noty.error(d.error_str || 'Не удалось отправить сообщение', { layout: 'bottomRight', timeout: 4000 });
+				}
+			} catch (e) {
+				console.error(e);
+				this.$noty.error('Ошибка сети', { layout: 'bottomRight', timeout: 3000 });
+			} finally {
+				this.sending = false;
+			}
+		},
 	},
+	
 	sendKP() {
 		this.$noty.info('Отправка КП появится позже', { layout: 'bottomRight', timeout: 3000 });
 	},
